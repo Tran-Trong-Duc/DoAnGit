@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smart Garden</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/jpeg" href="/assets/smart-garden-logo.jpg" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script>
+    const SERVER_ORIGIN = "http://localhost:3000";
+    const isFileOpen = window.location.protocol === "file:";
+    const isWrongLocalServer = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+      && window.location.port
+      && window.location.port !== "3000";
+    if (isFileOpen || isWrongLocalServer) {
+      window.location.replace(SERVER_ORIGIN + "/login.html");
+    }
+
+    const hasLoginCookie = document.cookie.split("; ").some((item) => item.startsWith("sg_token="));
+    if (!localStorage.getItem("token") && !hasLoginCookie) {
+      window.location.replace("/login.html");
+    }
+  </script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img class="brand-logo" src="/assets/smart-garden-logo.jpg" alt="Smart Garden" />
+      <!-- <div><h2 style="text-align: center;">Smart Garden</h2><p style="text-align: center;">IoT </p></div> -->
+    </div>
+    <button class="nav active" onclick="showPage('dashboard', this)">Tổng quan</button>
+    <button class="nav" onclick="showPage('plants', this)">Cây trồng</button>
+    <button class="nav" onclick="showPage('controls', this)">Điều khiển</button>
+    <button class="nav" onclick="showPage('automation', this)">Tự động</button>
+    <button class="nav" onclick="showPage('fertilizers', this)">Bón phân</button>
+    <button class="nav" onclick="showPage('soil', this)">Theo dõi đất</button>
+    <button class="nav" onclick="showPage('gardens', this)">Quản lý vườn</button>
+    <button class="nav" onclick="showPage('devices', this)">Thiết bị</button>
+    
+    <button class="nav" onclick="showPage('reports', this)">Báo cáo</button>
+    <button class="nav" onclick="showPage('alerts', this)">🚨 Cảnh báo</button>
+    <button class="nav nav-chatbot" type="button" onclick="openPlantChatbotModal()">Trợ lý AI cây trồng</button>
+    <button class="nav logout-nav" type="button" style="text-align: center;" onclick="logout()">Đăng xuất</button>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1 id="pageTitle">Tổng quan hệ thống</h1>
+        <p>Giám sát dữ liệu cảm biến và điều khiển vườn công nghệ cao</p>
+        <form id="siteSearchForm" class="site-search-bar" role="search">
+          <input id="globalPlantSearch" type="search" autocomplete="off" required placeholder="Tìm kiếm thông tin-chức năng" />
+          <button type="submit" class="site-search-submit">Tìm</button>
+        </form>
+        <div id="systemSearchSuggestions" class="system-search-suggestions hidden"></div>
+      </div>
+      <div class="topbar-actions">
+        <div class="clock"><span>Thời gian hiện tại</span><strong id="clock">--:--:--</strong></div>
+        <button id="autoGlobalToggle" class="secondary state-off" data-auto-toggle onclick="toggleAllDeviceAuto()">Đã tắt chế độ tự động</button>
+        <button id="emergencyToggle" class="danger" data-emergency-toggle onclick="toggleEmergency()">Dừng khẩn cấp</button>
+      </div>
+    </header>
+
+    <section id="dashboard" class="page active-page">
+      <div class="panel" data-main-plant-panel="dashboard"></div>
+      
+
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <div><h2>Biểu đồ dữ liệu</h2><p>Nhiệt độ, độ ẩm, độ ẩm đất, ánh sáng và khí độc</p></div>
+          <span class="badge">Biểu đồ lấy từ CSDL</span>
+        </div>
+        <div id="chartSummary" class="chart-summary"></div>
+        <div class="chart-wrap"><canvas id="sensorChart"></canvas></div>
+        <div class="chart-range-control">
+          <div>
+            <strong id="chartRangeValue">7 ngày</strong>
+            <span id="chartRangeHint">Kéo để xem dữ liệu năm</span>
+          </div>
+          <input id="chartRangeSlider" type="range" min="1" max="365" step="1" value="7" />
+          <div class="chart-range-labels"><span>1 ngày</span><span>1 năm</span></div>
+          <div class="chart-date-control">
+            <label for="chartDatePicker">Chọn ngày chính xác</label>
+            <input id="chartDatePicker" type="date" />
+
+          </div>
+        </div>
+      </div>
+
+      <div class="sensor-live-note">
+        <span class="live-dot"></span>
+        <strong>Live</strong>
+        
+        <span>Dữ liệu cảm biến đang cập nhật thời gian thực</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card temp"><span>🌡️</span><p>Nhiệt độ</p><h2 id="statTemp">-- °C</h2></div>
+        <div class="stat-card humidity"><span>💧</span><p>Độ ẩm không khí</p><h2 id="statHumidity">-- %</h2></div>
+        <div class="stat-card soil"><span>🌾</span><p>Độ ẩm đất</p><h2 id="statSoil">-- %</h2></div>
+        <div class="stat-card light"><span>☀️</span><p>Ánh sáng</p><h2 id="statLight">-- lux</h2></div>
+        <div class="stat-card gas"><span>☣️</span><p>Khí độc</p><h2 id="statGas">-- ppm</h2></div>
+        <div class="stat-card gas"><span>🔥</span><p>Cảm biến lửa</p><h2 id="statFlame">--</h2></div>
+      </div>
+      
+      <div id="systemStatusPanel" class="panel"></div>
+      <div id="latestFertilizerPanel" class="panel"></div>
+      
+
+      
+
+      <div class="device-grid">
+        <div class="device-card"><!--<span>💧</span>--><h3>Bơm tưới</h3><p id="irrigationStatus">Đang chờ</p></div>
+        <div class="device-card"><!--<span>🌀</span>--><h3>Quạt</h3><p id="fanStatus">Đang chờ</p></div>
+        <div class="device-card"><!--<span>🚿</span>--><h3>Phun mát</h3><p id="sprayStatus">Đang chờ</p></div>
+        <div class="device-card"><!--<span>🚨</span>--><h3>Còi PCCC</h3><p id="buzzerStatus">Đang chờ</p></div>
+        
+      </div>
+    </section>
+
+    <section id="gardens" class="page">
+      <div id="gardenOverview" class="panel">
+        <div class="panel-head">
+          <div><h2>Danh sách vườn</h2><p id="gardenCount">0 vườn</p></div>
+          <button onclick="showGardenForm()">Thêm vườn mới</button>
+        </div>
+        <div id="gardenList" class="garden-list"></div>
+      </div>
+
+      <div id="gardenFormPage" class="panel hidden">
+        <div class="panel-head">
+          <div><h2 id="gardenFormTitle">Thêm vườn mới</h2><p>Thông tin vườn và thiết bị đang sử dụng</p></div>
+          <button class="secondary" onclick="showGardenOverview()">Quay lại danh sách</button>
+        </div>
+        <input type="hidden" id="gardenEditId" />
+        <div class="form-grid">
+          <input id="gardenName" placeholder="Tên vườn" />
+          <input id="gardenLocation" placeholder="Vị trí" />
+          <input id="gardenUserId" placeholder="User ID" value="1" />
+        </div>
+        <textarea id="gardenDeviceInfo" rows="5" placeholder="Thông tin thiết bị của vườn: cảm biến, bơm tưới, quạt, phun sương..."></textarea>
+        <div class="row">
+          <button onclick="saveGarden()">Lưu vườn</button>
+          <button class="secondary" onclick="showGardenOverview()">Hủy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="devices" class="page">
+      <div id="deviceOverview" class="panel">
+        <div class="panel-head">
+          <div><h2>Danh sách thiết bị</h2><p id="deviceCount">0 thiết bị</p></div>
+          <button onclick="showDeviceForm()">Thêm thiết bị mới</button>
+        </div>
+        <div id="deviceList" class="device-list"></div>
+      </div>
+
+      <div id="deviceFormPage" class="panel hidden">
+        <div class="panel-head">
+          <div><h2 id="deviceFormTitle">Thêm thiết bị mới</h2><p>Thông tin thiết bị lắp trong vườn và topic MQTT nếu có.</p></div>
+          <button class="secondary" onclick="showDeviceOverview()">Quay lại danh sách</button>
+        </div>
+        <input type="hidden" id="deviceEditId" />
+        <div class="form-grid">
+          <input id="deviceName" placeholder="Tên thiết bị" />
+          <select id="deviceType">
+            <option value="irrigation">Bơm tưới</option>
+            <option value="fan">Quạt</option>
+            <option value="spray">Phun sương</option>
+            <option value="buzzer">Còi báo động</option>
+            <option value="sensor">Cảm biến</option>
+            <option value="other">Khác</option>
+          </select>
+          <select id="deviceGardenId">
+            <option value="">Chọn vườn</option>
+          </select>
+          <select id="deviceStatus">
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="maintenance">Bảo trì</option>
+            <option value="error">Lỗi</option>
+          </select>
+        </div>
+        <input id="deviceTopic" placeholder="MQTT topic, ví dụ: garden/pump/1" />
+        <textarea id="deviceNote" rows="4" placeholder="Ghi chú thiết bị: vị trí lắp, chân relay, nguồn điện, model..."></textarea>
+        <div class="row">
+          <button onclick="saveDevice()">Lưu thiết bị</button>
+          <button class="secondary" onclick="showDeviceOverview()">Hủy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="plants" class="page">
+      <div id="plantOverview" class="plant-layout">
+        <div class="panel plant-main-panel" data-main-plant-panel="plants"></div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div><h2>Danh sách cây trồng</h2><p id="plantCount">0 cây</p></div>
+            <button onclick="showPlantForm()">Thêm cây trồng mới</button>
+          </div>
+          <div id="plantList" class="plant-list"></div>
+        </div>
+      </div>
+
+      <div id="plantFormPage" class="panel hidden">
+        <div class="panel-head">
+          <div><h2 id="plantFormTitle">Thêm cây trồng mới</h2><p>Thông tin cây và ngưỡng dùng cho chế độ tự động</p></div>
+          <button class="secondary" onclick="showPlantOverview()">Quay lại danh sách</button>
+        </div>
+        <input type="hidden" id="plantEditId" />
+        <div class="image-field">
+          <label for="plantImage">Ảnh cây trồng</label>
+          <input type="file" id="plantImage" accept="image/*" onchange="previewPlantImage()" />
+          <div id="plantImagePreview" class="plant-image-preview">
+            <span>Chưa chọn ảnh</span>
+          </div>
+        </div>
+        <div class="form-grid">
+          <input id="plantName" placeholder="Tên cây trồng" />
+          <select id="plantGardenId">
+            <option value="">Chọn vườn</option>
+          </select>
+          <textarea id="plantDescription" class="form-wide" rows="3" placeholder="Mô tả cây trồng"></textarea>
+          <input id="plantTempMin" placeholder="Nhiệt độ thấp nhất (°C)" />
+          <input id="plantTempMax" placeholder="Nhiệt độ cao nhất (°C)" />
+          <input id="plantHumidityMin" placeholder="Độ ẩm không khí thấp nhất (%)" />
+          <input id="plantHumidityMax" placeholder="Độ ẩm không khí cao nhất (%)" />
+          <input id="plantSoilMin" placeholder="Độ ẩm đất thấp nhất (%)" />
+          <input id="plantSoilMax" placeholder="Độ ẩm đất cao nhất (%)" />
+          <input id="plantLightMax" placeholder="Ánh sáng cao nhất (lux)" />
+          <input id="plantSoilPh" type="number" step="0.1" min="0" max="14" placeholder="pH đất lý tưởng (0-14)" />
+          <input id="plantSoilType" placeholder="Loại đất lý tưởng" />
+          <select id="plantSoilLooseness">
+            <option value="">Độ tơi xốp lý tưởng</option>
+            <option value="Tơi xốp">Tơi xốp</option>
+            <option value="Trung bình">Trung bình</option>
+            <option value="Chặt">Chặt</option>
+          </select>
+          <select id="plantSoilDrainage">
+            <option value="">Khả năng thoát nước</option>
+            <option value="Đất ráo">Đất ráo</option>
+            <option value="Đất ẩm">Đất ẩm</option>
+            <option value="Đất sũng nước">Đất sũng nước</option>
+          </select>
+          <textarea id="plantSoilNote" class="form-wide" rows="3" placeholder="Ghi chú"></textarea>
+          <input type="number" id="plantWateringHour" min="0" max="23" placeholder="Giờ tưới định kỳ (0-23)" />
+          <input type="number" id="plantWateringMinute" min="0" max="59" placeholder="Phút tưới định kỳ (0-59)" />
+          <input type="number" id="plantWateringDuration" min="1" placeholder="Thời gian tưới (giây)" />
+        </div>
+        <div class="row">
+          <button onclick="savePlant()">Lưu cây trồng</button>
+          <button class="secondary" onclick="showPlantOverview()">Hủy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="controls" class="page">
+      <div class="panel" data-main-plant-panel="controls"></div>
+      <div id="controlSensorPanel" class="panel realtime-sensor-panel" data-realtime-sensor-panel></div>
+      <div class="control-grid">
+        <div class="panel control-card">
+          <h2>Điều khiển tưới</h2>
+          <input id="manualIrrigationDuration" placeholder="Thời gian tưới (giây)" />
+          <div class="control-action">
+            <button class="secondary state-off" data-device-control="irrigation" data-on-label="Tưới đang bật" data-off-label="Tưới đang tắt" onclick="irrigate()">Tưới đang tắt</button>
+            <span class="countdown-badge" data-countdown="irrigation">Đang tắt</span>
+          </div>
+          <p>Bơm tưới thủ công.</p>
+        </div>
+        <div class="panel control-card">
+          <h2>Bật quạt theo thời gian</h2>
+          <input id="fanDuration" placeholder="Thời gian bật quạt (giây)" />
+          <div class="control-action">
+            <button class="secondary state-off" data-device-control="fan" data-on-label="Quạt đang bật" data-off-label="Quạt đang tắt" onclick="fanTimer()">Quạt đang tắt</button>
+            <span class="countdown-badge" data-countdown="fan">Đang tắt</span>
+          </div>
+        </div>
+        <div class="panel control-card">
+          <h2>Phun nước làm mát</h2>
+          <input id="sprayDuration" placeholder="Thời gian phun nước (giây)" />
+          <div class="control-action">
+            <button class="secondary state-off" data-device-control="spray" data-on-label="Phun mát đang bật" data-off-label="Phun mát đang tắt" onclick="sprayTimer()">Phun mát đang tắt</button>
+            <span class="countdown-badge" data-countdown="spray">Đang tắt</span>
+          </div>
+        </div>
+        <div class="panel control-card">
+          <h2>Quạt + phun nước</h2>
+          <input id="coolingDuration" placeholder="Thời gian làm mát (giây)" />
+          <div class="control-action">
+            <button class="secondary state-off" data-device-control="cooling" data-on-label="Làm mát đang bật" data-off-label="Làm mát đang tắt" onclick="coolingTimer()">Làm mát đang tắt</button>
+            <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
+          </div>
+        </div>
+        <div class="panel control-card">
+          <h2>Làm mát tới nhiệt độ</h2>
+          <input type="number" id="targetTemp" step="0.1" placeholder="Nhiệt độ mục tiêu trong ngưỡng cây" />
+          <div class="control-action">
+            <button class="secondary state-off" data-device-control="cooling" data-on-label="Làm mát đang bật" data-off-label="Làm mát đang tắt" onclick="coolingTarget()">Làm mát đang tắt</button>
+            <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="automation" class="page">
+      <div class="two-col">
+        <div>
+          <div class="panel" data-main-plant-panel="automation"></div>
+          <div id="automationSensorPanel" class="panel realtime-sensor-panel" data-realtime-sensor-panel></div>
+        </div>
+        <div class="panel control-card highlight">
+          <div class="panel-head">
+            <div><h2>⚙ Điều khiển tự động</h2><p style="font-size: 10px; color: burlywood;">Ngưỡng của cây chính được dùng để tự điều khiển thiết bị.</p></div>
+            <button id="autoModeToggle" class="secondary state-off" data-auto-toggle onclick="toggleAllDeviceAuto()">Đã tắt chế độ tự động</button>
+          </div>
+          <div id="autoIrrigationModeControls" class="auto-mode-controls hidden">
+            <button id="sensorIrrigationModeButton" type="button" class="state-on" onclick="setAutoIrrigationMode('sensor')">Tưới tự động</button>
+            <button id="scheduleIrrigationModeButton" type="button" class="secondary state-off" onclick="setAutoIrrigationMode('schedule')">Tưới theo lịch</button>
+          </div>
+          <div id="autoScheduleArea" class="hidden">
+            <div id="autoScheduleSummary" class="auto-summary"></div>
+            <div class="form-grid">
+              <input type="number" id="autoHour" min="0" max="23" placeholder="Giờ tưới (0-23)" />
+              <input type="number" id="autoMinute" min="0" max="59" placeholder="Phút tưới (0-59)" />
+              <input type="number" id="autoDuration" min="1" placeholder="Thời gian tưới tự động (giây)" />
+            </div>
+            <div class="row">
+              <button id="autoScheduleSaveButton" onclick="setAutoIrrigation()">Lưu lịch tưới tự động</button>
+              <button id="autoScheduleCancelButton" class="secondary hidden" onclick="cancelAutoScheduleEdit()">Hủy sửa</button>
+            </div>
+            <div id="autoScheduleList" class="auto-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="fertilizers" class="page">
+      <div id="fertilizerOverview" class="panel">
+        <div class="panel-head">
+          <div><h2>Danh sách bón phân</h2><p id="fertilizerCount">0 lần bón</p></div>
+          <button onclick="showFertilizerForm()">Thêm bón phân mới</button>
+        </div>
+        <div id="fertilizerList" class="fertilizer-list"></div>
+      </div>
+
+      <div id="fertilizerFormPage" class="panel hidden">
+        <div class="panel-head">
+          <div><h2 id="fertilizerFormTitle">Thêm bón phân mới</h2><p>Thời gian lưu sẽ tự lấy thời điểm hiện tại</p></div>
+          <button class="secondary" onclick="showFertilizerOverview()">Quay lại danh sách</button>
+        </div>
+        <input type="hidden" id="fertEditId" />
+        <div class="form-grid">
+          <select id="fertPlantId">
+            <option value="">Chọn cây trồng</option>
+          </select>
+          <input id="fertType" placeholder="Loại phân" />
+          <input id="fertMethod" placeholder="Phương pháp bón" />
+          <input id="fertQuantity" placeholder="Số lượng" />
+        </div>
+        <textarea id="fertNote" rows="4" placeholder="Ghi chú thêm"></textarea>
+        <div class="row">
+          <button onclick="saveFertilizer()">Lưu bón phân</button>
+          <button class="secondary" onclick="showFertilizerOverview()">Hủy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="soil" class="page">
+      <div class="panel" data-main-plant-panel="soil"></div>
+
+      <div id="soilOverview" class="panel">
+        <div class="panel-head">
+          <div><h2>theo dõi</h2><p id="soilRecordCount">0 bản ghi</p></div>
+          <button onclick="showSoilRecordForm()">Thêm thông tin đất</button>
+        </div>
+        <div id="soilRecordList" class="soil-list"></div>
+      </div>
+
+      <div id="soilFormPage" class="panel hidden">
+        <div class="panel-head">
+          <div><h2 id="soilFormTitle">Thêm thông tin đất</h2><p>Ghi nhận pH, loại đất, độ tơi xốp và khả năng thoát nước.</p></div>
+          <button class="secondary" onclick="showSoilRecordOverview()">Quay lại danh sách</button>
+        </div>
+        <input type="hidden" id="soilEditId" />
+        <div class="form-grid">
+          <select id="soilGardenId">
+            <option value="">Chọn vườn</option>
+          </select>
+          <input id="soilPh" type="number" step="0.1" min="0" max="14" placeholder="pH đất (0-14)" />
+          <input id="soilType" placeholder="Loại đất" />
+          <select id="soilLooseness">
+            <option value="">Độ tơi xốp</option>
+            <option value="Tơi xốp">Tơi xốp</option>
+            <option value="Trung bình">Trung bình</option>
+            <option value="Chặt">Chặt</option>
+          </select>
+          <select id="soilDrainage">
+            <option value="">Khả năng thoát nước</option>
+            <option value="Đất ráo">Đất ráo</option>
+            <option value="Đất ẩm">Đất ẩm</option>
+            <option value="Đất sũng nước">Đất sũng nước</option>
+          </select>
+        </div>
+        <textarea id="soilNote" rows="4" placeholder="Ghi chú đất: màu đất, dinh dưỡng, cải tạo đất..."></textarea>
+        <div class="row">
+          <button onclick="saveSoilRecord()">Lưu thông tin đất</button>
+          <button class="secondary" onclick="showSoilRecordOverview()">Hủy</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="reports" class="page">
+      <div class="panel"><div class="panel-head"><div><h2>Xem báo cáo</h2><p>Dữ liệu cảm biến, log thiết bị và lịch sử tưới</p></div><button onclick="exportExcel()">Xuất Excel</button></div></div>
+      <div class="panel"><h2>Dữ liệu cảm biến mới nhất</h2><table><thead><tr><th>ID</th><th>Nhiệt độ</th><th>Độ ẩm</th><th>Độ ẩm đất</th><th>Ánh sáng</th><th>Khí độc</th><th>Thời gian</th></tr></thead><tbody id="sensorTable"></tbody></table></div>
+      <div class="panel"><h2>Lịch sử điều khiển</h2><table><thead><tr><th>ID</th><th>Device ID</th><th>Hành động</th><th>Chế độ</th><th>Thời gian</th></tr></thead><tbody id="deviceLogTable"></tbody></table></div>
+      <div class="panel"><h2>Lịch sử tưới</h2><table><thead><tr><th>ID</th><th>Lượng nước</th><th>Thời gian tưới</th><th>Thời điểm</th></tr></thead><tbody id="irrigationLogTable"></tbody></table></div>
+      <div class="panel"><h2>Lịch sử bón phân</h2><table><thead><tr><th>ID</th><th>Cây</th><th>Loại phân</th><th>Phương pháp</th><th>Số lượng</th><th>Thời điểm</th></tr></thead><tbody id="fertilizerLogTable"></tbody></table></div>
+    </section>
+
+    <section id="alerts" class="page">
+      <div class="panel fire-safety-panel">
+        <div class="panel-head">
+          <div><h2>Phòng cháy chữa cháy</h2><p>Cảnh báo cháy được ưu tiên cao hơn điều khiển tự động thông thường.</p></div>
+          <button id="fireSimulationToggle" class="secondary state-off" onclick="toggleFireSimulation()">Giả lập tắt</button>
+        </div>
+        <div id="fireSafetyStatus" class="fire-status-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div><h2>Danh sách cảnh báo</h2><p id="alertMuteStatus">Cảnh báo đang bật</p></div>
+          <div class="alert-actions">
+            <button id="alertMuteToggle" class="state-on" onclick="toggleAlertMute()">Cảnh báo đang bật</button>
+            <button id="alertRefreshButton" class="refresh-button" onclick="loadAlerts(this)">Tải lại</button>
+          </div>
+        </div>
+        <table><thead><tr><th>ID</th><th>Nội dung</th><th>Mức độ</th><th>Thời gian</th></tr></thead><tbody id="alertTable"></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <div id="internalSearchModal" class="internal-search-modal hidden" role="dialog" aria-modal="true">
+    <div class="internal-search-dialog internal-search-dialog--site">
+      <div class="internal-search-head">
+        <div>
+          <span class="eyebrow">Tìm kiếm Google CSE</span>
+          <h2 id="internalSearchTitle">Kết quả tìm kiếm</h2>
+        </div>
+        <button class="secondary" type="button" onclick="closeInternalSearch()">Đóng</button>
+      </div>
+
+      <div id="internalSearchSetup" class="internal-search-setup hidden" aria-live="polite">
+        <p id="internalSearchSetupMessage">Chưa cấu hình Google Programmable Search. Thêm GOOGLE_CSE_CX vào file .env để dùng CSE nhúng.</p>
+      </div>
+
+      <div id="internalSearchStatus" class="internal-search-status"></div>
+      <div id="internalSearchResults" class="internal-search-results"></div>
+      <p id="internalSearchFallbackText" class="internal-search-fallback-line hidden">Không có kết quả trong chỉ mục CX.</p>
+    </div>
+  </div>
+
+  <div id="alertModal" class="alert-modal hidden" role="dialog" aria-modal="true">
+    <div class="alert-dialog">
+      <div id="alertModalIcon" class="alert-icon">⚠️</div>
+      <div>
+        <span id="alertModalLevel" class="eyebrow">Cảnh báo</span>
+        <h2 id="alertModalTitle">Ngưỡng bị vượt qua</h2>
+        <p id="alertModalMessage">--</p>
+        <p id="alertModalTime" class="alert-time">--</p>
+      </div>
+      <button onclick="acknowledgeCurrentAlert()">Đã xem</button>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="confirm-modal hidden" role="dialog" aria-modal="true">
+    <div class="confirm-dialog">
+      <span class="eyebrow">Xác nhận</span>
+      <h2 id="confirmModalTitle">Xác nhận thao tác</h2>
+      <p id="confirmModalMessage">Bạn có chắc muốn tiếp tục?</p>
+      <div class="confirm-actions">
+        <button id="confirmModalCancel" class="secondary" type="button">Hủy</button>
+        <button id="confirmModalAccept" class="danger" type="button">Xóa</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

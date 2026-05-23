@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Smart Garden IoT - Đăng nhập</title>
+<link rel="icon" type="image/jpeg" href="/assets/smart-garden-logo.jpg">
+<script>
+const SERVER_ORIGIN = "http://localhost:3000";
+const isFileOpen = window.location.protocol === "file:";
+const isWrongLocalServer = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  && window.location.port
+  && window.location.port !== "3000";
+if (isFileOpen || isWrongLocalServer) {
+  window.location.replace(SERVER_ORIGIN + "/login.html");
+}
+</script> 
+
+<style>
+body {
+  background: #0f172a;
+  color: white;
+  font-family: Arial;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.box {
+  background: #1e293b;
+  padding: 30px;
+  border-radius: 10px;
+  width: 340px;
+}
+
+.auth-logo {
+  width: 100%;
+  display: block;
+  border-radius: 10px;
+  margin-bottom: 18px;
+  background: #e6ecea;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: none;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+button {
+ align-items: center;
+ cursor: pointer;
+
+ margin-bottom: 10px;
+  width: 100%;
+  padding: 10px;
+  background: #22c55e;
+  border: none;
+  color: white;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+a {
+  color: #38bdf8;
+  display: block;
+  margin-top: 10px;
+  text-align: center;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+  <img class="auth-logo" src="/assets/smart-garden-logo.jpg" alt="Smart Garden IoT">
+  <h2>Đăng nhập</h2>
+
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Mật khẩu">
+
+  <button onclick="login()">Đăng nhập</button>
+  <a href="/register.html">Chưa có tài khoản? Đăng ký</a>
+</div>
+
+<script>
+const API = window.location.origin;
+
+async function login() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+
+  if (!email || !password) {
+    alert("Vui lòng nhập email và mật khẩu");
+    return;
+  }
+
+  try {
+    const res = await fetch(API + "/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await res.json();
+
+    if (data.message === "OK" && data.token) {
+      alert("Đăng nhập thành công");
+
+      // 🔥 QUAN TRỌNG
+      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("token", data.token);
+
+      // 🔥 CHUYỂN TRANG
+      window.location.href = "/app.html";
+
+    } else {
+      alert(data.message || "Đăng nhập thất bại");
+    }
+  } catch (err) {
+    alert("Lỗi kết nối: " + err.message);
+  }
+}
+</script>
+
+</body>
+</html>

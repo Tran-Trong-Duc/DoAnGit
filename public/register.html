@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Smart Garden IoT - Đăng ký</title>
+<link rel="icon" type="image/jpeg" href="/assets/smart-garden-logo.jpg">
+<script>
+const SERVER_ORIGIN = "http://localhost:3000";
+const isFileOpen = window.location.protocol === "file:";
+const isWrongLocalServer = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  && window.location.port
+  && window.location.port !== "3000";
+if (isFileOpen || isWrongLocalServer) {
+  window.location.replace(SERVER_ORIGIN + "/login.html");
+}
+</script>
+
+<style>
+body {
+  background: #0f172a;
+  color: white;
+  font-family: Arial;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.box {
+  background: #1e293b;
+  padding: 30px;
+  border-radius: 10px;
+  width: 340px;
+}
+
+.auth-logo {
+  width: 100%;
+  display: block;
+  border-radius: 10px;
+  margin-bottom: 18px;
+  background: #e6ecea;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 5px;
+  border: none;
+   box-sizing: border-box;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  background: #22c55e;
+  border: none;
+  color: white;
+  border-radius: 5px;
+    box-sizing: border-box;
+}
+
+a {
+  color: #38bdf8;
+  display: block;
+  margin-top: 10px;
+  text-align: center;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+  <img class="auth-logo" src="/assets/smart-garden-logo.jpg" alt="Smart Garden IoT">
+  <h2>Đăng ký</h2>
+
+  <input id="name" placeholder="Tên">
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Mật khẩu">
+
+  <button onclick="register()">Đăng ký</button>
+
+  <a href="/login.html">Đã có tài khoản? Đăng nhập</a>
+</div>
+
+<script>
+const API = window.location.origin;
+
+async function register() {
+  const name = document.getElementById("name").value;
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+
+  const res = await fetch(API + "/register", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ name, email, password })
+  });
+
+  const data = await res.json();
+
+  alert(data.message);
+
+  if ((data.message || "").toLowerCase().includes("thanh cong")) {
+    window.location = "/login.html";
+  }
+}
+</script>
+
+</body>
+</html>
