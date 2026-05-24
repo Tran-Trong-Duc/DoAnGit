@@ -3,12 +3,18 @@ Hệ thống quản lý vườn công nghệ cao tích hợp IoT:Ứng dụng we
 
 Tính năng chính
 Giám sát môi trường - 6 cảm biến: nhiệt độ, độ ẩm, ánh sáng, khí độc, lửa
+
 Điều khiển thiết bị - Bơm tưới, quạt, phun sương, còi PCCC
+
 Tự động hóa - 5 chế độ tự động theo ngưỡng cảm biến
+
 Cảnh báo thông minh - Phát hiện vượt ngưỡng và nguy cơ cháy
+
 Trợ lý AI - Tích hợp Gemini hỗ trợ chăm sóc cây trồng
+
 Báo cáo - Xuất Excel dữ liệu cảm biến và lịch sử
-Tech Stack
+
+Tech Stack:
 Node.js | Express.js | MySQL |HiveMQ
 
 Trang đăng nhập
