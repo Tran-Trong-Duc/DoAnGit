@@ -261,9 +261,9 @@
       <div class="control-grid">
         <div class="panel control-card">
           <h2>Điều khiển tưới</h2>
-          <input id="manualIrrigationDuration" placeholder="Thời gian tưới (giây)" />
+          <input style="text-align: center;" id="manualIrrigationDuration" placeholder="Thời gian tưới (giây)" />
           <div class="control-action">
-            <button class="secondary state-off" data-device-control="irrigation" data-on-label="Tưới đang bật" data-off-label="Tưới đang tắt" onclick="irrigate()">Tưới đang tắt</button>
+            <button class="control-ready" style="width: 90%;; align-items: center;" data-device-control="irrigation" onclick="irrigate()">Bật</button>
             <span class="countdown-badge" data-countdown="irrigation">Đang tắt</span>
           </div>
           <p>Bơm tưới thủ công.</p>
@@ -272,7 +272,7 @@
           <h2>Bật quạt theo thời gian</h2>
           <input id="fanDuration" placeholder="Thời gian bật quạt (giây)" />
           <div class="control-action">
-            <button class="secondary state-off" data-device-control="fan" data-on-label="Quạt đang bật" data-off-label="Quạt đang tắt" onclick="fanTimer()">Quạt đang tắt</button>
+            <button class="control-ready" data-device-control="fan" onclick="fanTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="fan">Đang tắt</span>
           </div>
         </div>
@@ -280,7 +280,7 @@
           <h2>Phun nước làm mát</h2>
           <input id="sprayDuration" placeholder="Thời gian phun nước (giây)" />
           <div class="control-action">
-            <button class="secondary state-off" data-device-control="spray" data-on-label="Phun mát đang bật" data-off-label="Phun mát đang tắt" onclick="sprayTimer()">Phun mát đang tắt</button>
+            <button class="control-ready" data-device-control="spray" onclick="sprayTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="spray">Đang tắt</span>
           </div>
         </div>
@@ -288,7 +288,7 @@
           <h2>Quạt + phun nước</h2>
           <input id="coolingDuration" placeholder="Thời gian làm mát (giây)" />
           <div class="control-action">
-            <button class="secondary state-off" data-device-control="cooling" data-on-label="Làm mát đang bật" data-off-label="Làm mát đang tắt" onclick="coolingTimer()">Làm mát đang tắt</button>
+            <button class="control-ready" data-device-control="cooling" onclick="coolingTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
           </div>
         </div>
@@ -296,7 +296,7 @@
           <h2>Làm mát tới nhiệt độ</h2>
           <input type="number" id="targetTemp" step="0.1" placeholder="Nhiệt độ mục tiêu trong ngưỡng cây" />
           <div class="control-action">
-            <button class="secondary state-off" data-device-control="cooling" data-on-label="Làm mát đang bật" data-off-label="Làm mát đang tắt" onclick="coolingTarget()">Làm mát đang tắt</button>
+            <button class="control-ready" data-device-control="cooling" onclick="coolingTarget()">Bật</button>
             <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
           </div>
         </div>
@@ -311,22 +311,35 @@
         </div>
         <div class="panel control-card highlight">
           <div class="panel-head">
-            <div><h2>⚙ Điều khiển tự động</h2><p style="font-size: 10px; color: burlywood;">Ngưỡng của cây chính được dùng để tự điều khiển thiết bị.</p></div>
+            <div><h2>⚙ Điều khiển tự động</h2><p style="font-size: 10px; color: burlywood;">Chọn setup cảm biến/ngưỡng hoặc chạy tự động theo lịch đã lưu.</p></div>
             <button id="autoModeToggle" class="secondary state-off" data-auto-toggle onclick="toggleAllDeviceAuto()">Đã tắt chế độ tự động</button>
           </div>
           <div id="autoIrrigationModeControls" class="auto-mode-controls hidden">
-            <button id="sensorIrrigationModeButton" type="button" class="state-on" onclick="setAutoIrrigationMode('sensor')">Tưới tự động</button>
-            <button id="scheduleIrrigationModeButton" type="button" class="secondary state-off" onclick="setAutoIrrigationMode('schedule')">Tưới theo lịch</button>
+            <button id="sensorIrrigationModeButton" type="button" class="state-on" onclick="setAutoIrrigationMode('sensor')">Setup tự động</button>
+            <button id="scheduleIrrigationModeButton" type="button" class="secondary state-off" onclick="setAutoIrrigationMode('schedule')">Điều khiển tự động theo lịch</button>
+          </div>
+          <div id="autoSetupArea" class="hidden">
+            <div class="auto-setup-tabs">
+              <button id="autoSetupIrrigationButton" type="button" onclick="setAutoSetupDevice('irrigation')">Tưới tự động</button>
+              <button id="autoSetupFanButton" type="button" class="secondary" onclick="setAutoSetupDevice('fan')">Điều khiển quạt tự động</button>
+              <button id="autoSetupSprayButton" type="button" class="secondary" onclick="setAutoSetupDevice('spray')">Phun làm mát tự động</button>
+            </div>
+            <div id="autoRuleGrid" class="auto-rule-grid"></div>
           </div>
           <div id="autoScheduleArea" class="hidden">
+            <div class="auto-setup-tabs auto-schedule-tabs">
+              <button id="autoScheduleIrrigationButton" type="button" onclick="setAutoScheduleDevice('irrigation')">Bơm tưới</button>
+              <button id="autoScheduleFanButton" type="button" class="secondary" onclick="setAutoScheduleDevice('fan')">Quạt</button>
+              <button id="autoScheduleSprayButton" type="button" class="secondary" onclick="setAutoScheduleDevice('spray')">Phun làm mát</button>
+            </div>
             <div id="autoScheduleSummary" class="auto-summary"></div>
             <div class="form-grid">
-              <input type="number" id="autoHour" min="0" max="23" placeholder="Giờ tưới (0-23)" />
-              <input type="number" id="autoMinute" min="0" max="59" placeholder="Phút tưới (0-59)" />
-              <input type="number" id="autoDuration" min="1" placeholder="Thời gian tưới tự động (giây)" />
+              <input type="number" id="autoHour" min="0" max="23" placeholder="Giờ chạy lịch (0-23)" />
+              <input type="number" id="autoMinute" min="0" max="59" placeholder="Phút chạy lịch (0-59)" />
+              <input type="number" id="autoDuration" min="1" placeholder="Thời gian chạy tự động (giây)" />
             </div>
             <div class="row">
-              <button id="autoScheduleSaveButton" onclick="setAutoIrrigation()">Lưu lịch tưới tự động</button>
+              <button id="autoScheduleSaveButton" onclick="setAutoIrrigation()">Lưu lịch điều khiển tự động</button>
               <button id="autoScheduleCancelButton" class="secondary hidden" onclick="cancelAutoScheduleEdit()">Hủy sửa</button>
             </div>
             <div id="autoScheduleList" class="auto-list"></div>

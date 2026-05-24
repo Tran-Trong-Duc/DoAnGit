@@ -1,18 +1,22 @@
 const ExcelJS = require("exceljs");
 const {
+  insertDiseaseIfMissing,
   insertKnowledgeIfMissing,
+  listKnowledgeEntries,
   normalizeText,
   extractSearchTerms,
+  updateDiseaseFromExcel,
   updateKnowledgeFromExcel,
   warmKnowledgeCache,
 } = require("./mysqlKnowledge");
 
 const MAX_FIELD_PAIRS = 20;
+const SOURCE_COLUMN_COUNT = 7;
+const FIXED_TEMPLATE_COLUMNS = 2 + SOURCE_COLUMN_COUNT;
 
 const COMMON_FIELD_LABELS = [
   "thông tin",
   "đất",
-  "bệnh",
   "môi trường sống",
   "ngưỡng cảm biến",
   "chăm sóc",
@@ -32,60 +36,7 @@ const COMMON_FIELD_LABELS = [
   "lưu ý",
 ];
 
-const TEMPLATE_ROWS = [
-  {
-    ten_cay: "Ớt",
-    tu_khoa: "ớt; ot; chili; cây ớt; ớt cay; rau gia vị; quả ớt; trồng ớt; ớt chỉ thiên; ớt chuông; ớt hiểm; smart garden; cay ot; pepper; capsicum",
-    fields: [
-      ["thông tin", "Ớt là cây rau gia vị thu hoạch quả, thường có vị cay, dùng tươi hoặc chế biến. Cây sinh trưởng tốt khi đủ nắng, đất thoát nước và chăm sóc ổn định."],
-      ["đất", "Ớt hợp đất tơi xốp, thoát nước tốt, ẩm vừa và pH khoảng 6.0-6.8. Tránh đất úng lâu vì cây dễ thối rễ, vàng lá và giảm đậu quả."],
-      ["bệnh", "Ớt thường gặp xoăn lá do bọ trĩ, rệp hoặc virus; cũng có thể bị thán thư, héo xanh và thối rễ. Cần kiểm tra mặt dưới lá và xử lý sớm."],
-      ["môi trường sống", "Ớt cần nơi thông thoáng, nắng trực tiếp khoảng 6-8 giờ mỗi ngày, nhiệt độ 20-32°C và đất không bị bí nước. Vườn quá ẩm dễ phát sinh nấm bệnh."],
-      ["ngưỡng cảm biến", "Theo dõi độ ẩm đất, nhiệt độ và ánh sáng trước khi bật tưới, quạt hoặc phun mát. Khi đất khô hoặc vườn nóng, ưu tiên kiểm tra cảm biến thực tế."],
-      ["chăm sóc", "Giữ ẩm đều, bón phân cân đối, tỉa lá già và giữ tán thoáng. Khi cây mang quả nên chú ý kali và canxi để hạn chế rụng hoa, thối đuôi quả."],
-      ["tưới nước", "Tưới khi mặt đất bắt đầu se khô, tránh tưới dồn dập khi đất vẫn ẩm. Nên tưới vào gốc vào sáng sớm hoặc chiều mát để giảm sốc nhiệt."],
-      ["phân bón", "Giai đoạn sinh trưởng cần đạm vừa phải; khi ra hoa, đậu quả nên tăng kali, canxi và vi lượng. Không bón quá nhiều đạm vì cây dễ tốt lá, ít quả."],
-      ["ánh sáng", "Ớt cần nắng mạnh và ổn định, tối thiểu khoảng 6 giờ mỗi ngày. Thiếu sáng cây dễ vươn cao, yếu thân, rụng hoa và quả nhỏ."],
-      ["nhiệt độ", "Nhiệt độ phù hợp cho ớt khoảng 20-32°C. Trên 35°C cây dễ rụng hoa, xoăn lá hoặc cháy mép lá, cần thông gió hoặc phun mát hợp lý."],
-      ["độ ẩm", "Độ ẩm đất nên duy trì mức vừa, không quá khô và không úng. Không khí quá ẩm kéo dài làm tăng nguy cơ nấm, thán thư và thối rễ."],
-      ["pH", "pH đất phù hợp cho ớt khoảng 6.0-6.8. Nếu đất quá chua hoặc quá kiềm, cây hấp thu dinh dưỡng kém và dễ biểu hiện vàng lá."],
-      ["thu hoạch", "Có thể thu hoạch khi quả đạt kích thước mong muốn hoặc chuyển màu tùy giống. Thu đều giúp cây tiếp tục ra hoa và nuôi lứa quả mới."],
-      ["sâu hại", "Sâu hại thường gặp gồm bọ trĩ, rệp, nhện đỏ và sâu ăn lá. Cần kiểm tra đọt non, mặt dưới lá và xử lý sớm khi mật độ còn thấp."],
-      ["ra hoa", "Khi ớt ra hoa cần giữ nước ổn định, tránh sốc khô ướt và tránh bón thừa đạm. Thiếu nắng hoặc nóng quá mức có thể làm rụng hoa."],
-      ["trồng chậu", "Ớt trồng chậu cần chậu thoát nước tốt, giá thể nhẹ và vị trí đủ nắng. Không nên để khay hứng nước ngập lâu vì rễ dễ thiếu oxy."],
-      ["nhà kính", "Trong nhà kính hoặc vườn kín cần thông gió đều để giảm nóng, giảm ẩm cao và hạn chế bọ trĩ, rệp. Khi bí khí nên ưu tiên bật quạt hoặc mở thông gió."],
-      ["cắt tỉa", "Tỉa lá già, lá sát gốc và cành bệnh để tán thông thoáng. Không tỉa quá mạnh khi cây đang ra hoa, đậu quả vì có thể làm cây bị sốc."],
-      ["giống", "Có thể chọn giống ớt chỉ thiên, ớt hiểm, ớt chuông hoặc giống địa phương tùy mục đích. Nên chọn cây con khỏe, thân cứng và không có dấu bệnh."],
-      ["lưu ý", "Khi thấy lá xoăn, đất khô, vườn nóng hoặc cây chậm lớn, hãy kiểm tra cảm biến, mặt dưới lá và lịch tưới trước khi tự động bật thiết bị."],
-    ],
-  },
-  {
-    ten_cay: "Khế",
-    tu_khoa: "khế; cay khe; cây khế; quả khế; cây ăn quả; quả năm cánh; khế chua; khế ngọt; trồng khế; khế sân vườn; cây lâu năm; smart garden; star fruit; carambola; khe",
-    fields: [
-      ["thông tin", "Khế là cây ăn quả lâu năm, quả có năm cánh rõ, khi chín thường vàng và có vị chua ngọt. Cây phù hợp trồng sân vườn hoặc chậu lớn nếu đủ nắng."],
-      ["đất", "Khế cần đất thoát nước, ẩm vừa và không bị úng kéo dài. Đất hơi chua đến trung tính, giàu hữu cơ hoai mục sẽ giúp cây phát triển bền hơn."],
-      ["bệnh", "Khế có thể gặp rệp sáp, sâu đục quả, đốm lá và thối rễ khi đất úng. Nên giữ tán thông thoáng, kiểm tra quả non và tránh tưới quá nhiều."],
-      ["môi trường sống", "Khế ưa nắng, cần không gian thoáng và đất thoát nước. Cây chịu nóng khá tốt nhưng vẫn cần giữ ẩm ổn định trong thời kỳ ra hoa, nuôi quả."],
-      ["ngưỡng cảm biến", "Theo dõi độ ẩm đất và nhiệt độ để tránh úng hoặc khô hạn. Khi vườn nóng hoặc đất khô, kiểm tra cảm biến trước khi bật tưới hay phun mát."],
-      ["chăm sóc", "Tưới vừa đủ, tỉa cành sâu bệnh và giữ tán thông thoáng. Sau thu hoạch có thể bón hữu cơ hoai mục kết hợp NPK cân đối để phục hồi cây."],
-      ["tưới nước", "Khế cần nước đều trong giai đoạn ra hoa và nuôi quả nhưng không chịu úng. Nên tưới sâu vừa phải, để đất ráo nhẹ trước lần tưới tiếp theo."],
-      ["phân bón", "Bón hữu cơ hoai mục định kỳ, kết hợp NPK cân đối. Khi cây ra hoa, nuôi quả nên bổ sung kali và canxi để quả chắc, hạn chế rụng."],
-      ["ánh sáng", "Khế cần nắng tốt để ra hoa và đậu quả ổn định. Thiếu sáng cây dễ vươn cành, tán rậm, ít hoa và quả nhỏ."],
-      ["nhiệt độ", "Khế sinh trưởng tốt trong điều kiện ấm, khoảng 20-35°C. Nắng gắt kéo dài có thể làm héo lá non nếu đất thiếu ẩm."],
-      ["độ ẩm", "Độ ẩm đất nên giữ mức vừa, tránh khô hạn kéo dài khi cây đang nuôi quả. Đất quá ẩm lâu ngày làm tăng nguy cơ thối rễ."],
-      ["pH", "Khế phù hợp đất hơi chua đến trung tính, pH tham khảo khoảng 5.5-6.8. Nếu pH lệch quá nhiều, cây hấp thu dinh dưỡng kém."],
-      ["thu hoạch", "Thu khi quả chuyển màu vàng tùy giống và đạt độ chua ngọt mong muốn. Nên hái nhẹ tay để tránh dập cánh quả."],
-      ["sâu hại", "Sâu đục quả, rệp sáp và côn trùng chích hút có thể làm hư quả non. Cần vệ sinh vườn, bao quả hoặc xử lý sớm khi phát hiện."],
-      ["ra hoa", "Giai đoạn ra hoa cần hạn chế sốc nước, giữ cây đủ nắng và tán thoáng. Thiếu dinh dưỡng hoặc úng nước có thể làm rụng hoa, đậu quả kém."],
-      ["trồng chậu", "Khế trồng chậu cần chậu lớn, đất thoát nước và tỉa rễ hoặc thay giá thể định kỳ khi cây lớn. Đặt chậu nơi nhiều nắng để cây ra hoa tốt."],
-      ["nhà kính", "Nếu trồng trong nhà kính, cần giữ không khí lưu thông và tránh nhiệt tích tụ. Độ ẩm quá cao kéo dài có thể làm tăng bệnh đốm lá, thối rễ."],
-      ["cắt tỉa", "Tỉa cành vượt, cành sâu bệnh và cành mọc vào trong tán sau thu hoạch. Tán thoáng giúp cây nhận sáng đều và giảm sâu bệnh."],
-      ["giống", "Nên chọn giống khế phù hợp mục đích dùng quả chua hoặc ngọt, cây giống khỏe và bộ rễ tốt. Cây ghép thường cho quả ổn định hơn cây gieo hạt."],
-      ["lưu ý", "Khi cây rụng hoa, quả nhỏ, đất khô hoặc vườn nóng, cần kiểm tra nước, nắng và dinh dưỡng trước khi tăng tưới hoặc bón phân."],
-    ],
-  },
-];
+const TEMPLATE_ROWS = [];
 
 const CATEGORY_KEYWORD_BANK = {
   thong_tin: ["thông tin", "giới thiệu", "đặc điểm", "là cây gì", "mô tả", "tổng quan"],
@@ -235,6 +186,26 @@ function pickHeader(headers, names) {
   return -1;
 }
 
+function readSourceMeta(values, headers) {
+  const sourceTitleIndex = pickHeader(headers, ["nguon", "nguon_tai_lieu", "ten_nguon", "source", "source_title"]);
+  const sourceUrlIndex = pickHeader(headers, ["source_url", "nguon_url", "url", "link", "duong_dan"]);
+  const sourceAuthorIndex = pickHeader(headers, ["tac_gia", "nguoi_viet", "source_author", "author"]);
+  const sourceOrganizationIndex = pickHeader(headers, ["to_chuc", "don_vi", "co_quan", "source_organization", "publisher"]);
+  const sourcePublishedAtIndex = pickHeader(headers, ["ngay_cong_bo", "ngay_xuat_ban", "source_published_at", "published_at"]);
+  const isVerifiedIndex = pickHeader(headers, ["da_xac_minh", "xac_minh", "is_verified", "verified"]);
+  const verificationNoteIndex = pickHeader(headers, ["ghi_chu_xac_minh", "verification_note"]);
+
+  return {
+    source_title: sourceTitleIndex >= 0 ? values[sourceTitleIndex] : "",
+    source_url: sourceUrlIndex >= 0 ? values[sourceUrlIndex] : "",
+    source_author: sourceAuthorIndex >= 0 ? values[sourceAuthorIndex] : "",
+    source_organization: sourceOrganizationIndex >= 0 ? values[sourceOrganizationIndex] : "",
+    source_published_at: sourcePublishedAtIndex >= 0 ? values[sourcePublishedAtIndex] : "",
+    is_verified: isVerifiedIndex >= 0 ? values[isVerifiedIndex] : "",
+    verification_note: verificationNoteIndex >= 0 ? values[verificationNoteIndex] : "",
+  };
+}
+
 function getRowValues(row) {
   const values = [];
   for (let index = 1; index <= row.cellCount; index += 1) {
@@ -297,6 +268,7 @@ function parseWideRow(values, header, rowNumber = 0) {
   const topic = header.topicIndex >= 0 ? values[header.topicIndex] : "";
   const sharedKeywords = header.keywordsIndex >= 0 ? values[header.keywordsIndex] : "";
   if (!topic) return [];
+  const sourceMeta = readSourceMeta(values, header.headers);
 
   const entries = header.widePairs
     .map(({ index, fieldIndex, infoIndex }) => {
@@ -313,6 +285,7 @@ function parseWideRow(values, header, rowNumber = 0) {
           `truong_khoa${index}`,
         ]),
         answer,
+        ...sourceMeta,
       };
     })
     .filter(Boolean);
@@ -321,12 +294,13 @@ function parseWideRow(values, header, rowNumber = 0) {
 }
 
 function parseLegacyRow(values, headers) {
+  const sourceMeta = readSourceMeta(values, headers);
   const structuredIndex = pickHeader(headers, ["dong_kw", "kw_line", "du_lieu_kw"]);
   const structuredText = structuredIndex >= 0 ? values[structuredIndex] : "";
-  if (structuredText) return parseStructuredKnowledgeLine(structuredText);
+  if (structuredText) return parseStructuredKnowledgeLine(structuredText).map((entry) => ({ ...entry, ...sourceMeta }));
 
   const firstCellStructured = parseStructuredKnowledgeLine(values.find((value) => /^KW-/i.test(value)) || "");
-  if (firstCellStructured.length) return firstCellStructured;
+  if (firstCellStructured.length) return firstCellStructured.map((entry) => ({ ...entry, ...sourceMeta }));
 
   const topicIndex = pickHeader(headers, ["ten_cay", "ten", "cay", "topic", "plant", "chu_de"]);
   const categoryIndex = pickHeader(headers, ["nhom_khoa", "truong_khoa", "nhom", "loai", "category", "phan_loai"]);
@@ -346,6 +320,7 @@ function parseLegacyRow(values, headers) {
     category: fieldCategory(label),
     keywords: buildStructuredKeywords(topic, label, answer, keywords),
     answer,
+    ...sourceMeta,
   }];
 }
 
@@ -392,12 +367,55 @@ function parseWorksheet(worksheet) {
   return entries;
 }
 
+function parseDiseaseWorksheet(worksheet) {
+  let header = null;
+  const maxRow = Math.min(worksheet.rowCount, 10);
+  for (let rowNumber = 1; rowNumber <= maxRow; rowNumber += 1) {
+    const headers = getRowValues(worksheet.getRow(rowNumber)).map(normalizeHeader);
+    const topicIndex = pickHeader(headers, ["ten_cay", "ten", "cay", "topic", "plant", "chu_de"]);
+    const diseaseIndex = pickHeader(headers, ["ten_benh", "benh", "benh_cay", "disease", "disease_name"]);
+    const treatmentIndex = pickHeader(headers, ["cach_chua", "cach_tri", "phac_do", "phac_do_dieu_tri", "treatment"]);
+    if (topicIndex >= 0 && diseaseIndex >= 0 && treatmentIndex >= 0) {
+      header = { rowNumber, headers, topicIndex, diseaseIndex, treatmentIndex };
+      break;
+    }
+  }
+  if (!header) return [];
+
+  const authorIndex = pickHeader(header.headers, ["nguoi_dua_phac_do", "nguoi_phac_do", "tac_gia_phac_do", "bac_si", "chuyen_gia"]);
+
+  const entries = [];
+  for (let rowNumber = header.rowNumber + 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const values = getRowValues(worksheet.getRow(rowNumber));
+    const topic = header.topicIndex >= 0 ? values[header.topicIndex] : "";
+    const diseaseName = values[header.diseaseIndex] || "";
+    const treatment = values[header.treatmentIndex] || "";
+    if (!topic || !diseaseName || !treatment) continue;
+
+    entries.push({
+      topic,
+      ten_benh: diseaseName,
+      fieldLabel: diseaseName,
+      category: "benh",
+      keywords: buildStructuredKeywords(topic, diseaseName, treatment, diseaseName),
+      answer: treatment,
+      ...readSourceMeta(values, header.headers),
+      source_author: authorIndex >= 0 ? values[authorIndex] : "",
+    });
+  }
+  return entries;
+}
+
 function parseExcelKnowledgeWorkbook(workbook) {
   const entries = [];
   workbook.eachSheet((worksheet) => {
     const sheetName = normalizeText(worksheet.name);
     if (sheetName.includes("huong dan")) return;
-    entries.push(...parseWorksheet(worksheet));
+    if (sheetName.includes("benh") || sheetName.includes("disease")) {
+      entries.push(...parseDiseaseWorksheet(worksheet));
+    } else {
+      entries.push(...parseWorksheet(worksheet));
+    }
   });
   return entries.filter((entry) => entry.topic && entry.answer);
 }
@@ -436,6 +454,13 @@ function buildTemplateColumns() {
   const columns = [
     { header: "ten_cay", key: "ten_cay", width: 18 },
     { header: "tu_khoa", key: "tu_khoa", width: 48 },
+    { header: "nguon", key: "nguon", width: 34 },
+    { header: "source_url", key: "source_url", width: 48 },
+    { header: "tac_gia", key: "tac_gia", width: 24 },
+    { header: "to_chuc", key: "to_chuc", width: 28 },
+    { header: "ngay_cong_bo", key: "ngay_cong_bo", width: 18 },
+    { header: "da_xac_minh", key: "da_xac_minh", width: 16 },
+    { header: "ghi_chu_xac_minh", key: "ghi_chu_xac_minh", width: 34 },
   ];
 
   for (let index = 1; index <= MAX_FIELD_PAIRS; index += 1) {
@@ -448,21 +473,95 @@ function buildTemplateColumns() {
   return columns;
 }
 
-function buildTemplateRows() {
-  return TEMPLATE_ROWS.map((row) => {
-    const output = {
-      ten_cay: row.ten_cay,
-      tu_khoa: row.tu_khoa,
-    };
+function firstText(...values) {
+  return values.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
 
-    for (let index = 1; index <= MAX_FIELD_PAIRS; index += 1) {
-      const field = row.fields[index - 1];
-      output[`truong_khoa${index}`] = field?.[0] || "";
-      output[`thong_tin${index}`] = field?.[1] || "";
+async function buildTemplateRows() {
+  const entries = await listKnowledgeEntries();
+  const groups = new Map();
+
+  entries.forEach((entry) => {
+    const topic = String(entry.topic || "").trim();
+    const key = normalizeText(topic);
+    if (!key) return;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ten_cay: topic,
+        tu_khoa: "",
+        nguon: "",
+        source_url: "",
+        tac_gia: "",
+        to_chuc: "",
+        ngay_cong_bo: "",
+        da_xac_minh: "",
+        ghi_chu_xac_minh: "",
+        fields: [],
+      });
     }
 
+    const group = groups.get(key);
+    group.tu_khoa = group.tu_khoa || entry.keywords || "";
+    group.nguon = group.nguon || entry.source_title || "";
+    group.source_url = group.source_url || entry.source_url || "";
+    group.tac_gia = group.tac_gia || entry.source_author || "";
+    group.to_chuc = group.to_chuc || entry.source_organization || "";
+    group.ngay_cong_bo = group.ngay_cong_bo || (entry.source_published_at ? String(entry.source_published_at).slice(0, 10) : "");
+    group.da_xac_minh = group.da_xac_minh || (entry.is_verified ? "1" : "");
+    group.ghi_chu_xac_minh = group.ghi_chu_xac_minh || entry.verification_note || "";
+    group.fields.push({
+      label: firstText(entry.field_label, entry.category),
+      answer: entry.answer || "",
+    });
+  });
+
+  return [...groups.values()].map((group) => {
+    const output = {
+      ten_cay: group.ten_cay,
+      tu_khoa: group.tu_khoa,
+      nguon: group.nguon,
+      source_url: group.source_url,
+      tac_gia: group.tac_gia,
+      to_chuc: group.to_chuc,
+      ngay_cong_bo: group.ngay_cong_bo,
+      da_xac_minh: group.da_xac_minh,
+      ghi_chu_xac_minh: group.ghi_chu_xac_minh,
+    };
+
+    group.fields.slice(0, MAX_FIELD_PAIRS).forEach((field, index) => {
+      output[`truong_khoa${index + 1}`] = field.label;
+      output[`thong_tin${index + 1}`] = field.answer;
+    });
     return output;
   });
+}
+
+function buildDiseaseTemplateColumns() {
+  return [
+    { header: "ten_cay", key: "ten_cay", width: 22 },
+    { header: "ten_benh", key: "ten_benh", width: 28 },
+    { header: "cach_tri", key: "cach_tri", width: 74 },
+    { header: "nguoi_dua_phac_do", key: "nguoi_dua_phac_do", width: 28 },
+  ];
+}
+
+async function buildDiseaseTemplateRows(knowledgeRows = []) {
+  const seen = new Set();
+  return knowledgeRows
+    .map((row) => String(row.ten_cay || "").trim())
+    .filter((name) => {
+      const key = normalizeText(name);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((name) => ({
+      ten_cay: name,
+      ten_benh: "",
+      cach_tri: "",
+      nguoi_dua_phac_do: "",
+    }));
 }
 
 function formatKnowledgeSheet(sheet) {
@@ -472,7 +571,7 @@ function formatKnowledgeSheet(sheet) {
   sheet.views = [{ state: "frozen", xSplit: 2, ySplit: 1 }];
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: 1, column: 2 + MAX_FIELD_PAIRS * 2 },
+    to: { row: 1, column: FIXED_TEMPLATE_COLUMNS + MAX_FIELD_PAIRS * 2 },
   };
   sheet.eachRow((row, rowNumber) => {
     row.alignment = { vertical: "top", wrapText: true };
@@ -480,7 +579,7 @@ function formatKnowledgeSheet(sheet) {
   });
 
   for (let index = 1; index <= MAX_FIELD_PAIRS; index += 1) {
-    const fieldColumn = sheet.getColumn(2 + index * 2 - 1);
+    const fieldColumn = sheet.getColumn(FIXED_TEMPLATE_COLUMNS + index * 2 - 1);
     fieldColumn.eachCell((cell, rowNumber) => {
       if (rowNumber === 1) return;
       cell.dataValidation = {
@@ -492,38 +591,39 @@ function formatKnowledgeSheet(sheet) {
   }
 }
 
+function formatDiseaseSheet(sheet) {
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB45309" } };
+  sheet.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+  sheet.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: buildDiseaseTemplateColumns().length },
+  };
+  sheet.eachRow((row, rowNumber) => {
+    row.alignment = { vertical: "top", wrapText: true };
+    if (rowNumber > 1) row.height = 70;
+  });
+}
+
 async function createExcelTemplateBuffer() {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Smart Garden";
   workbook.created = new Date();
 
-  const sheet = workbook.addWorksheet("Nhap lieu");
+  const knowledgeRows = await buildTemplateRows();
+  const sheet = workbook.addWorksheet("Tri thuc");
   sheet.columns = buildTemplateColumns();
-  sheet.addRows(buildTemplateRows());
+  sheet.addRows(knowledgeRows);
   formatKnowledgeSheet(sheet);
 
-  const guide = workbook.addWorksheet("Huong dan");
-  guide.columns = [
-    { header: "muc", key: "muc", width: 24 },
-    { header: "noi_dung", key: "noi_dung", width: 116 },
-  ];
-  guide.addRows([
-    { muc: "Mỗi dòng", noi_dung: "Một dòng là một loại cây. Cột ten_cay là tên cây, tu_khoa là các tên gọi hoặc từ khóa nhận diện cây." },
-    { muc: "Từ khóa cây", noi_dung: "Cột tu_khoa tách bằng dấu ;. Nên nhập 10-20 từ khóa như tên có dấu, không dấu, tên tiếng Anh, giống cây, cách gọi phổ biến." },
-    { muc: "Trường khóa", noi_dung: `Nên nhập 15-20 trường khóa cho mỗi cây. Dùng các cặp truong_khoa1/thong_tin1 đến truong_khoa20/thong_tin20; thiếu vài cặp vẫn nạp được.` },
-    { muc: "Cách chat chọn dữ liệu", noi_dung: "Chat tìm cây bằng ten_cay và tu_khoa trước, sau đó tìm trường khóa gần nhất trong câu hỏi để trả đúng thong_tin tương ứng." },
-    { muc: "Ví dụ", noi_dung: "Nếu ten_cay=Ớt, tu_khoa=ớt;ot;chili và truong_khoa2=đất, khi hỏi 'ớt đất thế nào' chat sẽ trả nội dung trong thong_tin2." },
-    { muc: "Nạp mới", noi_dung: "Nút nạp file chỉ thêm cây hoặc trường khóa mới; nếu cây + trường khóa đã có trong MySQL thì bỏ qua để không ghi đè nhầm." },
-    { muc: "Sửa nguồn chat", noi_dung: "Nút sửa nguồn chat dùng cùng định dạng Excel này. Nếu cây + trường khóa đã có, hệ thống cập nhật thong_tin bằng nội dung trong Excel; nếu chưa có thì thêm mới." },
-  ]);
-  guide.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
-  guide.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF244333" } };
-  guide.eachRow((row) => {
-    row.alignment = { vertical: "top", wrapText: true };
-  });
+  const diseaseSheet = workbook.addWorksheet("Benh");
+  diseaseSheet.columns = buildDiseaseTemplateColumns();
+  diseaseSheet.addRows(await buildDiseaseTemplateRows(knowledgeRows));
+  formatDiseaseSheet(diseaseSheet);
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  const templateBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(templateBuffer);
 }
 
 async function importExcelKnowledge(buffer, originalName = "") {
@@ -542,28 +642,35 @@ async function importExcelKnowledge(buffer, originalName = "") {
   const plantCount = groupEntriesByPlant(parsedEntries).length;
   const imported = [];
   const skipped = [];
+  const diseaseImported = [];
+  const diseaseSkipped = [];
   for (const entry of parsedEntries) {
-    const result = await insertKnowledgeIfMissing({
-      ...entry,
-      suggestions: [],
-      source_type: "excel",
-    });
+    const isDisease = entry.category === "benh";
+    const result = isDisease
+      ? await insertDiseaseIfMissing({ ...entry, suggestions: [], source_type: "excel" })
+      : await insertKnowledgeIfMissing({ ...entry, suggestions: [], source_type: "excel" });
     if (result.skipped) {
-      skipped.push(result.entry);
+      if (isDisease) diseaseSkipped.push(result.entry);
+      else skipped.push(result.entry);
     } else {
-      imported.push(result.entry);
+      if (isDisease) diseaseImported.push(result.entry);
+      else imported.push(result.entry);
     }
   }
-  if (imported.length) await warmKnowledgeCache();
+  if (imported.length || diseaseImported.length) await warmKnowledgeCache();
 
   return {
     fileName: originalName,
     parsedCount: parsedEntries.length,
-    importedCount: imported.length,
-    skippedCount: skipped.length,
+    importedCount: imported.length + diseaseImported.length,
+    skippedCount: skipped.length + diseaseSkipped.length,
+    mainImportedCount: imported.length,
+    diseaseImportedCount: diseaseImported.length,
+    mainSkippedCount: skipped.length,
+    diseaseSkippedCount: diseaseSkipped.length,
     plantCount,
-    entries: imported,
-    skippedEntries: skipped.slice(0, 20),
+    entries: [...imported, ...diseaseImported].slice(0, 50),
+    skippedEntries: [...skipped, ...diseaseSkipped].slice(0, 20),
   };
 }
 
@@ -584,33 +691,44 @@ async function updateExcelKnowledge(buffer, originalName = "") {
   const created = [];
   const updated = [];
   const unchanged = [];
+  const diseaseCreated = [];
+  const diseaseUpdated = [];
+  const diseaseUnchanged = [];
 
   for (const entry of parsedEntries) {
-    const result = await updateKnowledgeFromExcel({
-      ...entry,
-      suggestions: [],
-      source_type: "excel_edit",
-    });
+    const isDisease = entry.category === "benh";
+    const result = isDisease
+      ? await updateDiseaseFromExcel({ ...entry, suggestions: [], source_type: "excel_edit" })
+      : await updateKnowledgeFromExcel({ ...entry, suggestions: [], source_type: "excel_edit" });
     if (result.created) {
-      created.push(result.entry);
+      if (isDisease) diseaseCreated.push(result.entry);
+      else created.push(result.entry);
     } else if (result.updated) {
-      updated.push(result.entry);
+      if (isDisease) diseaseUpdated.push(result.entry);
+      else updated.push(result.entry);
     } else {
-      unchanged.push(result.entry);
+      if (isDisease) diseaseUnchanged.push(result.entry);
+      else unchanged.push(result.entry);
     }
   }
 
-  if (created.length || updated.length) await warmKnowledgeCache();
+  if (created.length || updated.length || diseaseCreated.length || diseaseUpdated.length) await warmKnowledgeCache();
 
   return {
     fileName: originalName,
     parsedCount: parsedEntries.length,
-    createdCount: created.length,
-    updatedCount: updated.length,
-    unchangedCount: unchanged.length,
+    createdCount: created.length + diseaseCreated.length,
+    updatedCount: updated.length + diseaseUpdated.length,
+    unchangedCount: unchanged.length + diseaseUnchanged.length,
+    mainCreatedCount: created.length,
+    mainUpdatedCount: updated.length,
+    mainUnchangedCount: unchanged.length,
+    diseaseCreatedCount: diseaseCreated.length,
+    diseaseUpdatedCount: diseaseUpdated.length,
+    diseaseUnchangedCount: diseaseUnchanged.length,
     plantCount,
-    entries: [...created, ...updated].slice(0, 50),
-    unchangedEntries: unchanged.slice(0, 20),
+    entries: [...created, ...updated, ...diseaseCreated, ...diseaseUpdated].slice(0, 50),
+    unchangedEntries: [...unchanged, ...diseaseUnchanged].slice(0, 20),
   };
 }
 

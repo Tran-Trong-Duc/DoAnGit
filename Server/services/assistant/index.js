@@ -198,7 +198,7 @@ function responsePayload({
     sources: [],
     suggestions: suggestions || [],
     warning,
-    mode: "Dữ liệu nội bộ MySQL",
+    mode: "Dữ liệu nội bộ",
     model,
     webSearch: false,
     webRetrievalCount: 0,

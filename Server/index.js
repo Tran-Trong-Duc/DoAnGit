@@ -154,6 +154,144 @@ function normalizeSensorRow(row) {
   };
 }
 
+function toAutoRuleBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return Boolean(fallback);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  return ["1", "true", "on", "yes"].includes(String(value).toLowerCase());
+}
+
+function normalizeAutoRuleConfig(source = DEFAULT_AUTO_RULES) {
+  const normalized = {};
+  AUTO_RULE_DEVICES.forEach((device) => {
+    normalized[device] = {};
+    Object.keys(AUTO_RULE_SENSORS).forEach((sensorKey) => {
+      normalized[device][sensorKey] = {};
+      AUTO_RULE_DIRECTIONS.forEach((direction) => {
+        const fallback = DEFAULT_AUTO_RULES?.[device]?.[sensorKey]?.[direction] || false;
+        const value = source?.[device]?.[sensorKey]?.[direction];
+        normalized[device][sensorKey][direction] = toAutoRuleBoolean(value, fallback);
+      });
+    });
+  });
+  return normalized;
+}
+
+function autoRuleEnabled(device, sensorKey, direction) {
+  return Boolean(autoRuleConfig?.[device]?.[sensorKey]?.[direction]);
+}
+
+function hasAnyEnabledAutoRule(device) {
+  return Object.keys(AUTO_RULE_SENSORS).some((sensorKey) =>
+    AUTO_RULE_DIRECTIONS.some((direction) => autoRuleEnabled(device, sensorKey, direction))
+  );
+}
+
+function getAutoRuleSensorList() {
+  return Object.entries(AUTO_RULE_SENSORS).map(([key, sensor]) => ({
+    key,
+    label: sensor.label,
+    unit: sensor.unit || "",
+    fireOnly: Boolean(sensor.fireOnly),
+  }));
+}
+
+function getAutoRuleThreshold(sensorKey, direction, thresholds) {
+  const sensor = AUTO_RULE_SENSORS[sensorKey];
+  if (!sensor || sensor.fireOnly) return null;
+  if (direction === "inside") {
+    const min = sensor.minKey ? parseOptionalNumber(thresholds[sensor.minKey]) : null;
+    const max = sensor.maxKey ? parseOptionalNumber(thresholds[sensor.maxKey]) : null;
+    return { min, max };
+  }
+  if (direction === "below" && sensor.minKey) return parseOptionalNumber(thresholds[sensor.minKey]);
+  if (direction === "above" && sensor.maxKey) return parseOptionalNumber(thresholds[sensor.maxKey]);
+  return null;
+}
+
+function getTriggeredAutoRules(device, readings, thresholds) {
+  if (!AUTO_RULE_DEVICES.includes(device)) return [];
+
+  const triggered = [];
+  Object.entries(AUTO_RULE_SENSORS).forEach(([sensorKey, sensor]) => {
+    if (sensor.fireOnly) return;
+    const value = parseOptionalNumber(readings[sensor.readingKey]);
+    if (!Number.isFinite(value)) return;
+
+    AUTO_RULE_DIRECTIONS.forEach((direction) => {
+      if (!autoRuleEnabled(device, sensorKey, direction)) return;
+      const threshold = getAutoRuleThreshold(sensorKey, direction, thresholds);
+      let matched = false;
+
+      if (direction === "inside") {
+        const min = parseOptionalNumber(threshold?.min);
+        const max = parseOptionalNumber(threshold?.max);
+        if (!Number.isFinite(min) && !Number.isFinite(max)) return;
+        matched =
+          (!Number.isFinite(min) || value >= min) &&
+          (!Number.isFinite(max) || value <= max);
+      } else {
+        if (!Number.isFinite(threshold)) return;
+        matched = direction === "below" ? value < threshold : value > threshold;
+      }
+
+      if (matched) {
+        triggered.push({
+          device,
+          sensorKey,
+          direction,
+          label: sensor.label,
+          value,
+          threshold,
+          min: threshold?.min,
+          max: threshold?.max,
+          unit: sensor.unit || "",
+        });
+      }
+    });
+  });
+
+  return triggered;
+}
+
+function formatAutoRuleReason(trigger) {
+  if (!trigger) return "rule tự động";
+  if (trigger.direction === "inside") {
+    const min = parseOptionalNumber(trigger.min);
+    const max = parseOptionalNumber(trigger.max);
+    if (Number.isFinite(min) && Number.isFinite(max)) {
+      return `${trigger.label} ${trigger.value}${trigger.unit} trong ngưỡng ${min}${trigger.unit} - ${max}${trigger.unit}`;
+    }
+    if (Number.isFinite(max)) {
+      return `${trigger.label} ${trigger.value}${trigger.unit} trong ngưỡng <= ${max}${trigger.unit}`;
+    }
+    return `${trigger.label} ${trigger.value}${trigger.unit} trong ngưỡng >= ${min}${trigger.unit}`;
+  }
+  const side = trigger.direction === "below" ? "dưới" : "trên";
+  return `${trigger.label} ${trigger.value}${trigger.unit} ${side} ngưỡng ${trigger.threshold}${trigger.unit}`;
+}
+
+function normalizeAutoScheduleDevice(value) {
+  const device = String(value || "irrigation").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUTO_SCHEDULE_DEVICES, device) ? device : "irrigation";
+}
+
+function setAutoScheduleDeviceStatus(device, active) {
+  if (device === "fan") {
+    autoFanActive = active;
+    fanStatus = active;
+    return;
+  }
+  if (device === "spray") {
+    autoSprayActive = active;
+    sprayStatus = active;
+    return;
+  }
+  autoIrrigationActive = active;
+  irrigationStatus = active;
+  if (!active) sensorIrrigationStartedAt = null;
+}
+
 function normalizeTimeValue(value) {
   if (value === undefined || value === null || value === "") return null;
   const text = String(value).trim();
@@ -209,6 +347,12 @@ const deviceCountdownEnds = {
   cooling: null,
   buzzer: null,
 };
+const manualDeviceTimers = {
+  irrigation: null,
+  fan: null,
+  spray: null,
+  cooling: null,
+};
 // Cac co nay cho phep nguoi dung tat rieng logic tu dong cua tung nhom thiet bi.
 const autoDisabled = {
   irrigation: false,
@@ -231,7 +375,6 @@ const alertPreferences = {
 
 // Giao dien van cap nhat cam bien lien tuc, nhung database chi luu moi 30 phut de tranh phinh du lieu.
 const AUTO_SCHEDULE_CHECK_INTERVAL_MS = 1000;
-const MAX_COOLING_TARGET_SECONDS = 15 * 60;
 const SENSOR_SAVE_INTERVAL_MS = 30 * 60 * 1000;
 const LIVE_SENSOR_BUFFER_SIZE = 120;
 const LIGHT_DEFAULT_MAX_LUX = 40000;
@@ -241,6 +384,87 @@ const FIRE_TEMP_SPIKE_C = 20;
 const FIRE_TEMP_SPIKE_WINDOW_MS = 5000;
 const FIRE_CRITICAL_TEMP = 60;
 const FIRE_RESPONSE_SECONDS = 2 * 60 * 60;
+const AUTO_RULE_DEVICES = ["irrigation", "fan", "spray"];
+const AUTO_RULE_DIRECTIONS = ["below", "inside", "above"];
+const AUTO_RULE_SENSORS = {
+  temperature: {
+    label: "Nhiệt độ",
+    readingKey: "temperature",
+    minKey: "tempMin",
+    maxKey: "tempMax",
+    unit: "°C",
+  },
+  humidity: {
+    label: "Độ ẩm không khí",
+    readingKey: "humidity",
+    minKey: "humidityMin",
+    maxKey: "humidityMax",
+    unit: "%",
+  },
+  soil_moisture: {
+    label: "Độ ẩm đất",
+    readingKey: "soil",
+    minKey: "soilMin",
+    maxKey: "soilMax",
+    unit: "%",
+  },
+  light: {
+    label: "Ánh sáng",
+    readingKey: "light",
+    minKey: "lightMin",
+    maxKey: "lightMax",
+    unit: " lux",
+  },
+  gas: {
+    label: "Khí độc",
+    readingKey: "gas",
+    maxKey: "gasMax",
+    unit: " ppm",
+  },
+  flame: {
+    label: "Cảm biến lửa",
+    readingKey: "flame",
+    fireOnly: true,
+  },
+};
+const DEFAULT_AUTO_RULES = {
+  irrigation: {
+    soil_moisture: { below: true, above: false },
+  },
+  fan: {
+    temperature: { below: false, above: true },
+    humidity: { below: false, above: true },
+    gas: { below: false, above: true },
+  },
+  spray: {
+    temperature: { below: false, above: true },
+    humidity: { below: true, above: false },
+  },
+};
+let autoRuleConfig = normalizeAutoRuleConfig();
+const AUTO_SCHEDULE_DEVICES = {
+  irrigation: {
+    label: "bơm tưới",
+    deviceId: 1,
+    countdownKey: "irrigation",
+    onAction: "schedule_irrigation_on",
+    offAction: "schedule_irrigation_off",
+  },
+  fan: {
+    label: "quạt",
+    deviceId: 2,
+    countdownKey: "fan",
+    onAction: "schedule_fan_on",
+    offAction: "schedule_fan_off",
+  },
+  spray: {
+    label: "phun làm mát",
+    deviceId: 3,
+    countdownKey: "spray",
+    onAction: "schedule_spray_on",
+    offAction: "schedule_spray_off",
+  },
+};
 const DEVICE_COMMAND_TOPICS = {
   irrigation: "garden/pump/set",
   fan: "garden/fan/set",
@@ -331,6 +555,17 @@ async function loadSystemSettings() {
       alertPreferences[key] = settings.get(`alert_${key}`) === "1";
     }
   });
+
+  if (settings.has("auto_rules")) {
+    try {
+      autoRuleConfig = normalizeAutoRuleConfig(JSON.parse(settings.get("auto_rules")));
+    } catch (err) {
+      console.log("Cannot load auto rules:", err.message);
+      autoRuleConfig = normalizeAutoRuleConfig();
+    }
+  } else {
+    autoRuleConfig = normalizeAutoRuleConfig();
+  }
 }
 
 function toSettingBoolean(value, fallback = true) {
@@ -441,6 +676,7 @@ async function ensureSchema() {
       updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (setting_key)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
+    await modifyColumn("system_settings", "setting_value", "TEXT NULL");
 
     await query(`CREATE TABLE IF NOT EXISTS soil_records (
       id INT NOT NULL AUTO_INCREMENT,
@@ -453,6 +689,46 @@ async function ensureSchema() {
       note TEXT NULL,
       created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
+
+    await query(`CREATE TABLE IF NOT EXISTS plant_disease_treatments (
+      id INT NOT NULL AUTO_INCREMENT,
+      plant_id INT DEFAULT NULL,
+      ten_cay VARCHAR(180) NOT NULL,
+      ten_cay_normalized VARCHAR(180) NULL,
+      benh_so TINYINT UNSIGNED NOT NULL,
+      ten_benh VARCHAR(180) NOT NULL,
+      tu_khoa TEXT NULL,
+      trieu_chung TEXT NULL,
+      nguyen_nhan TEXT NULL,
+      cach_chua MEDIUMTEXT NOT NULL,
+      phong_ngua MEDIUMTEXT NULL,
+      nguoi_dua_phac_do VARCHAR(180) NULL,
+      chuc_danh_nguoi_dua VARCHAR(120) NULL,
+      nguon_phac_do TEXT NULL,
+      source_title VARCHAR(255) NULL,
+      source_url TEXT NULL,
+      source_author VARCHAR(180) NULL,
+      source_organization VARCHAR(180) NULL,
+      source_published_at DATE NULL,
+      source_checked_at TIMESTAMP NULL,
+      is_verified TINYINT(1) NOT NULL DEFAULT 0,
+      verified_at TIMESTAMP NULL,
+      verification_note TEXT NULL,
+      muc_do VARCHAR(40) NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_plant_disease_slot (ten_cay, benh_so),
+      UNIQUE KEY uq_plant_disease_name (ten_cay, ten_benh),
+      KEY idx_plant_disease_plant_id (plant_id),
+      KEY idx_plant_disease_plant_name (ten_cay),
+      KEY idx_plant_disease_plant_normalized (ten_cay_normalized),
+      KEY idx_plant_disease_disease_name (ten_benh),
+      KEY idx_plant_disease_author (nguoi_dua_phac_do),
+      KEY idx_plant_disease_verified (is_verified),
+      CHECK (benh_so BETWEEN 1 AND 10)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
 
     await addColumnIfMissing("devices", "device_type", "VARCHAR(50) DEFAULT NULL");
@@ -498,10 +774,23 @@ async function ensureSchema() {
     await addColumnIfMissing("soil_records", "soil_drainage", "VARCHAR(100) NULL");
     await addColumnIfMissing("soil_records", "note", "TEXT NULL");
     await addColumnIfMissing("soil_records", "created_at", "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP");
+    await modifyColumn("plant_disease_treatments", "nguoi_dua_phac_do", "VARCHAR(180) NULL");
+    await addColumnIfMissing("plant_disease_treatments", "ten_cay_normalized", "VARCHAR(180) NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_title", "VARCHAR(255) NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_url", "TEXT NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_author", "VARCHAR(180) NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_organization", "VARCHAR(180) NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_published_at", "DATE NULL");
+    await addColumnIfMissing("plant_disease_treatments", "source_checked_at", "TIMESTAMP NULL");
+    await addColumnIfMissing("plant_disease_treatments", "is_verified", "TINYINT(1) NOT NULL DEFAULT 0");
+    await addColumnIfMissing("plant_disease_treatments", "verified_at", "TIMESTAMP NULL");
+    await addColumnIfMissing("plant_disease_treatments", "verification_note", "TEXT NULL");
     await addColumnIfMissing("alerts", "is_acknowledged", "TINYINT(1) NOT NULL DEFAULT 1");
     await addColumnIfMissing("alerts", "acknowledged_at", "TIMESTAMP NULL");
     await addColumnIfMissing("alerts", "alert_type", "VARCHAR(50) NULL");
     await addColumnIfMissing("auto_settings", "day_mask", "VARCHAR(7) NOT NULL DEFAULT '1111111'");
+    await addColumnIfMissing("auto_settings", "device_type", "VARCHAR(30) NOT NULL DEFAULT 'irrigation'");
+    await query("UPDATE auto_settings SET device_type='irrigation' WHERE device_type IS NULL OR device_type=''");
     await backfillPlantImagesFromUploads();
     await backfillSoilRecordGardens();
 
@@ -881,6 +1170,35 @@ function clearAllDeviceCountdowns() {
   clearDeviceCountdown(Object.keys(deviceCountdownEnds));
 }
 
+function normalizeTimerKeys(keys) {
+  return (Array.isArray(keys) ? keys : [keys]).filter((key) =>
+    Object.prototype.hasOwnProperty.call(manualDeviceTimers, key)
+  );
+}
+
+function clearManualDeviceTimers(keys) {
+  const timerKeys = normalizeTimerKeys(keys);
+  const handles = new Set(timerKeys.map((key) => manualDeviceTimers[key]).filter(Boolean));
+  handles.forEach((handle) => clearTimeout(handle));
+  Object.keys(manualDeviceTimers).forEach((key) => {
+    if (timerKeys.includes(key) || handles.has(manualDeviceTimers[key])) {
+      manualDeviceTimers[key] = null;
+    }
+  });
+}
+
+function setManualDeviceTimer(keys, handle) {
+  normalizeTimerKeys(keys).forEach((key) => {
+    manualDeviceTimers[key] = handle;
+  });
+}
+
+function finishManualDeviceTimer(keys, handle) {
+  normalizeTimerKeys(keys).forEach((key) => {
+    if (manualDeviceTimers[key] === handle) manualDeviceTimers[key] = null;
+  });
+}
+
 function getDeviceCountdowns() {
   const now = Date.now();
   return Object.fromEntries(
@@ -1149,25 +1467,10 @@ function stopAutoDeviceIfRunning(device, reason = "auto_disabled") {
   }
 }
 
-function startCoolingTargetSafetyTimer(target) {
-  // Co gioi han thoi gian de tranh quat/phun nuoc chay mai neu khong dat muc tieu.
-  if (coolingTargetTimer) clearTimeout(coolingTargetTimer);
-
-  coolingTargetTimer = setTimeout(() => {
-    if (coolingTargetTemp === null) return;
-    stopCooling({ mode: "manual", reason: "cooling_target_timeout" });
-    logCoolingAction("cooling_target_timeout", "manual");
-    createAlert(
-      `Đã tự tắt làm mát vì quá ${MAX_COOLING_TARGET_SECONDS / 60} phút chưa đạt ${target}°C`,
-      "warning",
-      "action"
-    );
-  }, MAX_COOLING_TARGET_SECONDS * 1000);
-}
-
 function startTimedDevice({ duration, onStart, onStop, log, commandOn, commandOff, timerKeys = [] }) {
   // Dung chung cho cac lenh bat thiet bi theo so giay: bat, ghi log, gui MQTT, roi tu tat.
   const seconds = parseDuration(duration);
+  if (timerKeys.length > 0) clearManualDeviceTimers(timerKeys);
   onStart();
   if (timerKeys.length > 0) setDeviceCountdown(timerKeys, seconds);
   if (log) {
@@ -1176,7 +1479,8 @@ function startTimedDevice({ duration, onStart, onStop, log, commandOn, commandOf
   if (commandOn) {
     publishDeviceCommand({ ...commandOn, duration: commandOn.duration ?? seconds });
   }
-  setTimeout(() => {
+  const handle = setTimeout(() => {
+    finishManualDeviceTimer(timerKeys, handle);
     if (
       fireProtectionActive &&
       commandOff &&
@@ -1191,7 +1495,115 @@ function startTimedDevice({ duration, onStart, onStop, log, commandOn, commandOf
       publishDeviceCommand({ ...commandOff, duration: commandOff.duration ?? seconds });
     }
   }, seconds * 1000);
+  if (timerKeys.length > 0) setManualDeviceTimer(timerKeys, handle);
   return seconds;
+}
+
+function deviceStatusPayload() {
+  return {
+    irrigationStatus,
+    fanStatus,
+    sprayStatus,
+    coolingStatus,
+    coolingTargetTemp,
+    buzzerStatus,
+    deviceCountdowns: getDeviceCountdowns(),
+  };
+}
+
+function setManualCoolingPart(device, active, reason = "manual_partial_cooling") {
+  const configs = {
+    fan: { id: 2, label: "quạt", other: "spray", otherLabel: "phun mát" },
+    spray: { id: 3, label: "phun mát", other: "fan", otherLabel: "quạt" },
+  };
+  const config = configs[device];
+  if (!config || coolingTargetTemp === null) return null;
+
+  const currentActive = device === "fan" ? fanStatus : sprayStatus;
+  const otherActive = config.other === "fan" ? fanStatus : sprayStatus;
+
+  if (!active && !currentActive) {
+    return { message: `${config.label} đang tắt, chức năng làm mát mục tiêu vẫn tiếp tục.`, info: true };
+  }
+
+  if (!active && !otherActive) {
+    return {
+      message: `Cần giữ ít nhất một thiết bị làm mát đang chạy. Muốn tắt toàn bộ, hãy dùng nút Dừng ở ô làm mát.`,
+      info: true,
+    };
+  }
+
+  if (active && currentActive) {
+    return { message: `${config.label} đang bật trong chức năng làm mát mục tiêu.`, info: true };
+  }
+
+  clearManualDeviceTimers([device]);
+  clearDeviceCountdown([device]);
+  if (device === "fan") {
+    fanStatus = active;
+    autoFanActive = false;
+  } else {
+    sprayStatus = active;
+    autoSprayActive = false;
+  }
+
+  const action = `cooling_target_${device}_${active ? "on" : "off"}`;
+  logDeviceAction(config.id, action, "manual");
+  publishDeviceCommand({
+    device,
+    state: active ? "on" : "off",
+    action,
+    mode: "manual",
+    reason,
+    extra: { target_temp: coolingTargetTemp },
+    notify: false,
+  });
+
+  return active
+    ? { message: `Đã bật lại ${config.label}; chức năng làm mát đến ${coolingTargetTemp}°C vẫn tiếp tục.`, info: true }
+    : { message: `Đã tắt ${config.label}; chức năng làm mát đến ${coolingTargetTemp}°C vẫn tiếp tục bằng ${config.otherLabel}.`, info: true };
+}
+
+function stopManualDevice(device, reason = "manual_stop") {
+  if ((device === "fan" || device === "spray") && coolingTargetTemp !== null) {
+    return setManualCoolingPart(device, false, reason);
+  }
+
+  if (device === "cooling" || ((device === "fan" || device === "spray") && coolingStatus)) {
+    clearManualDeviceTimers(["cooling", "fan", "spray"]);
+    stopCooling({ mode: "manual", reason });
+    logCoolingAction("cooling_off", "manual");
+    createAlert("Đã dừng làm mát", "info", "hardware", true);
+    return { message: "Đã dừng làm mát" };
+  }
+
+  const configs = {
+    irrigation: { id: 1, action: "irrigation_off", label: "tưới" },
+    fan: { id: 2, action: "fan_off", label: "quạt" },
+    spray: { id: 3, action: "spray_off", label: "phun mát" },
+  };
+  const config = configs[device];
+  if (!config) return null;
+
+  clearManualDeviceTimers([device]);
+  clearDeviceCountdown([device]);
+  if (device === "irrigation") {
+    irrigationStatus = false;
+    autoIrrigationActive = false;
+    sensorIrrigationStartedAt = null;
+  }
+  if (device === "fan") {
+    fanStatus = false;
+    autoFanActive = false;
+  }
+  if (device === "spray") {
+    sprayStatus = false;
+    autoSprayActive = false;
+  }
+
+  logDeviceAction(config.id, config.action, "manual");
+  publishDeviceCommand({ device, state: "off", action: config.action, mode: "manual", reason });
+  return { message: `Đã dừng ${config.label}` };
 }
 
 // MQTT
@@ -1320,71 +1732,46 @@ client.on("message", (topic, message) => {
       const humidityMax = parseOptionalNumber(th.humidity_max);
       const soilMin = parseOptionalNumber(th.soil_min);
       const soilMax = parseOptionalNumber(th.soil_max);
+      const lightMin = normalizeLightReading(th.light_min);
       const lightMax = normalizeLightMaxThreshold(th.light_max);
+      const sensorReadings = { temperature, humidity, soil, light, gas, flame: flameDetected ? 1 : 0 };
+      const thresholdValues = {
+        tempMin,
+        tempMax,
+        humidityMin,
+        humidityMax,
+        soilMin,
+        soilMax,
+        lightMin,
+        lightMax,
+        gasMax: GAS_DANGER_THRESHOLD,
+      };
 
       updateThresholdAlerts(
         { temperature, humidity, soil, light, gas },
-        { tempMin, tempMax, humidityMin, humidityMax, soilMin, soilMax, lightMax, gasMax: GAS_DANGER_THRESHOLD }
+        thresholdValues
       );
       if (fireProtectionActive) return;
 
-      const tempReturnPoint =
-        Number.isFinite(tempMin) && Number.isFinite(tempMax) ? (tempMin + tempMax) / 2 : tempMax;
-      const airQualityFanNeeded =
-        (Number.isFinite(humidityMax) && humidity > humidityMax) || gas > GAS_DANGER_THRESHOLD;
-      const humiditySprayNeeded =
-        Number.isFinite(humidityMin) && Number.isFinite(humidity) && humidity < humidityMin;
+      const useSensorAutoRules = autoIrrigationMode === "sensor";
+      const fanAutoTriggers = useSensorAutoRules ? getTriggeredAutoRules("fan", sensorReadings, thresholdValues) : [];
+      const sprayAutoTriggers = useSensorAutoRules ? getTriggeredAutoRules("spray", sensorReadings, thresholdValues) : [];
+      const irrigationAutoTriggers = useSensorAutoRules ? getTriggeredAutoRules("irrigation", sensorReadings, thresholdValues) : [];
+      const airQualityFanNeeded = fanAutoTriggers.length > 0;
+      const humiditySprayNeeded = sprayAutoTriggers.length > 0;
       const sensorIrrigationNeeded =
-        autoIrrigationMode === "sensor" &&
-        Number.isFinite(soilMin) &&
-        Number.isFinite(soil) &&
-        soil < soilMin;
-
-      // Nhiet do vuot nguong thi tu bat lam mat va giu den khi ve diem giua cua nguong.
-      if (Number.isFinite(tempMax) && temperature > tempMax && !autoCoolingActive && !autoDisabled.cooling) {
-        const coolingDevices = [
-          !autoDisabled.fan ? "quạt" : null,
-          !autoDisabled.spray ? "phun nước" : null,
-        ].filter(Boolean).join(" và ");
-
-        autoCoolingActive = true;
-        coolingStatus = true;
-        if (!autoDisabled.fan) fanStatus = true;
-        if (!autoDisabled.spray) sprayStatus = true;
-
-        logCoolingAction("cooling_on", "auto");
-        if (!autoDisabled.fan) {
-          publishDeviceCommand({ device: "fan", state: "on", action: "cooling_on", mode: "auto", reason: "temperature_high", notify: false });
-        }
-        if (!autoDisabled.spray) {
-          publishDeviceCommand({ device: "spray", state: "on", action: "cooling_on", mode: "auto", reason: "temperature_high", notify: false });
-        }
-        createAlert(
-          `Tự động bật ${coolingDevices || "làm mát"} do nhiệt độ ${temperature} vượt ngưỡng`,
-          "info",
-          "action"
-        );
-      }
-
-      if (
-        autoCoolingActive &&
-        coolingTargetTemp === null &&
-        Number.isFinite(tempReturnPoint) &&
-        temperature <= tempReturnPoint
-      ) {
-        stopAutoCooling();
-        logCoolingAction("cooling_off", "auto");
-        createAlert(`Tự động tắt làm mát vì nhiệt độ đã về ${temperature}`, "info", "action");
-      }
+        useSensorAutoRules &&
+        irrigationAutoTriggers.length > 0;
 
       // Khoa auto theo tung thiet bi: tat auto phun thi do am thap khong tu bat phun.
       if (humiditySprayNeeded && !autoSprayActive && !autoDisabled.spray) {
+        const reason = sprayAutoTriggers.map(formatAutoRuleReason).join(", ");
         autoSprayActive = true;
         sprayStatus = true;
         clearDeviceCountdown(["spray"]);
         logDeviceAction(3, "humidity_spray_on", "auto");
-        publishDeviceCommand({ device: "spray", state: "on", action: "humidity_spray_on", mode: "auto", reason: "humidity_low", notify: false });
-        createAlert(`Tự động bật phun nước do độ ẩm không khí ${humidity} thấp`, "info", "action");
+        publishDeviceCommand({ device: "spray", state: "on", action: "humidity_spray_on", mode: "auto", reason, notify: false });
+        createAlert(`Tự động bật phun nước do ${reason}`, "info", "action");
       }
 
       if (autoSprayActive && (!humiditySprayNeeded || autoDisabled.spray) && !fireProtectionActive) {
@@ -1398,16 +1785,16 @@ client.on("message", (topic, message) => {
             state: "off",
             action: "humidity_spray_off",
             mode: "auto",
-            reason: autoDisabled.spray ? "auto_disabled" : "humidity_normal",
+            reason: autoDisabled.spray ? "auto_disabled" : "auto_rule_normal",
             notify: false,
           });
-          createAlert("Tự động tắt phun nước vì độ ẩm không khí đã về bình thường", "info", "action");
+          createAlert("Tự động tắt phun nước vì chỉ số đã về ngưỡng", "info", "action");
         }
       }
 
       // Do am khong khi cao hoac khi doc cao thi bat quat den khi chi so ve binh thuong.
       if (airQualityFanNeeded && !autoFanActive && !autoDisabled.fan) {
-        const reason = gas > GAS_DANGER_THRESHOLD ? `khí độc ${gas} cao` : `độ ẩm không khí ${humidity} cao`;
+        const reason = fanAutoTriggers.map(formatAutoRuleReason).join(", ");
         autoFanActive = true;
         fanStatus = true;
         logDeviceAction(2, "air_quality_fan_on", "auto");
@@ -1419,13 +1806,13 @@ client.on("message", (topic, message) => {
         autoFanActive = false;
         fanStatus = false;
         logDeviceAction(2, "air_quality_fan_off", "auto");
-        publishDeviceCommand({ device: "fan", state: "off", action: "air_quality_fan_off", mode: "auto", reason: "air_quality_normal", notify: false });
-        createAlert("Tự động tắt quạt vì độ ẩm/không khí đã về bình thường", "info", "action");
+        publishDeviceCommand({ device: "fan", state: "off", action: "air_quality_fan_off", mode: "auto", reason: "auto_rule_normal", notify: false });
+        createAlert("Tự động tắt quạt vì chỉ số đã về ngưỡng", "info", "action");
       }
 
       // Khoa auto tuoi: do am dat thap khong tu bat bom tuoi neu nguoi dung da tat.
       if (
-        autoIrrigationMode === "sensor" &&
+        useSensorAutoRules &&
         sensorIrrigationNeeded &&
         !autoIrrigationActive &&
         !autoDisabled.irrigation
@@ -1435,12 +1822,13 @@ client.on("message", (topic, message) => {
         sensorIrrigationStartedAt = Date.now();
         clearDeviceCountdown(["irrigation"]);
         logDeviceAction(1, "soil_irrigation_on", "auto");
-        publishDeviceCommand({ device: "irrigation", state: "on", action: "soil_irrigation_on", mode: "auto", reason: "soil_low", notify: false });
-        createAlert(`Tự động tưới vì độ ẩm đất ${soil} thấp`, "info", "action");
+        const reason = irrigationAutoTriggers.map(formatAutoRuleReason).join(", ");
+        publishDeviceCommand({ device: "irrigation", state: "on", action: "soil_irrigation_on", mode: "auto", reason, notify: false });
+        createAlert(`Tự động tưới vì ${reason}`, "info", "action");
       }
 
       if (
-        autoIrrigationMode === "sensor" &&
+        useSensorAutoRules &&
         autoIrrigationActive &&
         (!sensorIrrigationNeeded || autoDisabled.irrigation) &&
         !fireProtectionActive
@@ -1461,10 +1849,10 @@ client.on("message", (topic, message) => {
           state: "off",
           action: "soil_irrigation_off",
           mode: "auto",
-          reason: autoDisabled.irrigation ? "auto_disabled" : "soil_normal",
+          reason: autoDisabled.irrigation ? "auto_disabled" : "auto_rule_normal",
           notify: false,
         });
-        createAlert("Tự động tắt bơm tưới vì độ ẩm đất đã về bình thường", "info", "action");
+        createAlert("Tự động tắt bơm tưới vì chỉ số đã về ngưỡng", "info", "action");
       }
     }
   );
@@ -1774,6 +2162,32 @@ app.delete("/plants/:id", (req, res) => {
 });
 
 // DEVICES
+app.post("/manual-device/:device/stop", (req, res) => {
+  const device = String(req.params.device || "").toLowerCase();
+  const result = stopManualDevice(device);
+  if (!result) {
+    return res.status(400).json({ message: "Thiết bị không hợp lệ" });
+  }
+  res.json({
+    message: result.message,
+    info: Boolean(result.info),
+    status: deviceStatusPayload(),
+  });
+});
+
+app.post("/manual-device/:device/start", (req, res) => {
+  const device = String(req.params.device || "").toLowerCase();
+  const result = setManualCoolingPart(device, true, "manual_partial_cooling_start");
+  if (!result) {
+    return res.status(400).json({ message: "Chỉ bật lại quạt/phun riêng khi đang làm mát tới nhiệt độ mục tiêu" });
+  }
+  res.json({
+    message: result.message,
+    info: Boolean(result.info),
+    status: deviceStatusPayload(),
+  });
+});
+
 app.post("/irrigation", (req, res) => {
   const seconds = startTimedDevice({
     duration: req.body.duration,
@@ -1834,21 +2248,18 @@ app.post("/cooling-timer", (req, res) => {
       fanStatus = true;
       sprayStatus = true;
     },
-    onStop: () => stopCooling({ publish: false }),
+    onStop: () => {
+      stopCooling({ mode: "manual", reason: "timer_finished" });
+      logCoolingAction("cooling_off", "manual");
+      createAlert("Tắt làm mát", "info", "hardware", true);
+    },
     log: [2, "cooling_on", "manual"],
     commandOn: { device: "fan", state: "on", action: "cooling_on", mode: "manual", notify: false },
-    commandOff: { device: "fan", state: "off", action: "cooling_off", mode: "manual", reason: "timer_finished", notify: false },
     timerKeys: ["cooling", "fan", "spray"],
   });
   logDeviceAction(3, "cooling_on", "manual");
-    publishDeviceCommand({ device: "spray", state: "on", action: "cooling_on", mode: "manual", duration: seconds, notify: false });
-    createAlert(`Bật làm mát trong ${seconds} giây`, "info", "hardware", true);
-    setTimeout(() => {
-      logCoolingAction("cooling_off", "manual");
-      clearDeviceCountdown(["spray"]);
-      publishDeviceCommand({ device: "spray", state: "off", action: "cooling_off", mode: "manual", reason: "timer_finished", notify: false });
-      createAlert("Tắt làm mát", "info", "hardware", true);
-    }, seconds * 1000);
+  publishDeviceCommand({ device: "spray", state: "on", action: "cooling_on", mode: "manual", duration: seconds, notify: false });
+  createAlert(`Bật làm mát trong ${seconds} giây`, "info", "hardware", true);
   res.json({ message: `Đã làm mát ${seconds} giây` });
 });
 
@@ -1890,14 +2301,18 @@ app.post("/cooling-target", (req, res) => {
     coolingStatus = true;
     fanStatus = true;
     sprayStatus = true;
-    setDeviceCountdown(["cooling", "fan", "spray"], MAX_COOLING_TARGET_SECONDS);
+    clearDeviceCountdown(["cooling", "fan", "spray"]);
+    clearManualDeviceTimers(["cooling", "fan", "spray"]);
+    if (coolingTargetTimer) {
+      clearTimeout(coolingTargetTimer);
+      coolingTargetTimer = null;
+    }
     logCoolingAction("cooling_target_on", "manual");
     publishDeviceCommand({ device: "fan", state: "on", action: "cooling_target_on", mode: "manual", extra: { target_temp: target }, notify: false });
     publishDeviceCommand({ device: "spray", state: "on", action: "cooling_target_on", mode: "manual", extra: { target_temp: target }, notify: false });
     createAlert(`Bật làm mát đến ${target}°C`, "info", "hardware", true);
-    startCoolingTargetSafetyTimer(target);
     res.json({
-      message: `Đang làm mát đến ${target}°C, tự tắt nếu quá ${MAX_COOLING_TARGET_SECONDS / 60} phút chưa đạt`,
+      message: `Đang làm mát liên tục đến ${target}°C, hệ thống sẽ tự tắt khi đạt nhiệt độ mục tiêu`,
     });
   });
 });
@@ -1924,6 +2339,7 @@ app.post("/emergency", (req, res) => {
   fireSuppressedUntilMs = Date.now() + 15000;
   recentFireSamples.length = 0;
   clearAllDeviceCountdowns();
+  clearManualDeviceTimers(Object.keys(manualDeviceTimers));
 
   irrigationStatus = false;
   fanStatus = false;
@@ -1981,7 +2397,7 @@ app.post("/auto-device/all", (req, res) => {
 app.post("/auto-irrigation-mode", (req, res) => {
   const mode = String(req.body.mode || "").toLowerCase();
   if (!["sensor", "schedule"].includes(mode)) {
-    return res.status(400).json({ message: "Chế độ tưới không hợp lệ" });
+    return res.status(400).json({ message: "Chế độ điều khiển tự động không hợp lệ" });
   }
 
   autoIrrigationMode = mode;
@@ -2000,8 +2416,75 @@ app.post("/auto-irrigation-mode", (req, res) => {
   }
 
   res.json({
-    message: mode === "sensor" ? "Đã chọn tưới tự động theo cảm biến" : "Đã chọn tưới theo lịch",
+    message: mode === "sensor" ? "Đã chọn setup tự động theo cảm biến/ngưỡng" : "Đã chọn điều khiển tự động theo lịch",
     autoIrrigationMode,
+  });
+});
+
+app.get("/auto-rules", (req, res) => {
+  res.json({
+    autoRules: autoRuleConfig,
+    sensors: getAutoRuleSensorList(),
+  });
+});
+
+app.post("/auto-rules", (req, res) => {
+  runQuery(res, async () => {
+    const device = String(req.body.device || "").toLowerCase();
+    const sensor = String(req.body.sensor || "").toLowerCase();
+    const direction = String(req.body.direction || "").toLowerCase();
+    const enabled = toAutoRuleBoolean(req.body.enabled, false);
+
+    if (!AUTO_RULE_DEVICES.includes(device)) {
+      return res.status(400).json({ message: "Thiết bị tự động không hợp lệ" });
+    }
+    if (!Object.prototype.hasOwnProperty.call(AUTO_RULE_SENSORS, sensor)) {
+      return res.status(400).json({ message: "Cảm biến không hợp lệ" });
+    }
+    if (AUTO_RULE_SENSORS[sensor].fireOnly) {
+      return res.status(400).json({ message: "Cảm biến lửa chỉ phục vụ PCCC" });
+    }
+    if (direction === "unused") {
+      const nextRules = normalizeAutoRuleConfig(autoRuleConfig);
+      AUTO_RULE_DIRECTIONS.forEach((ruleDirection) => {
+        nextRules[device][sensor][ruleDirection] = false;
+      });
+      autoRuleConfig = nextRules;
+      await saveSystemSetting("auto_rules", JSON.stringify(autoRuleConfig));
+
+      if (!hasAnyEnabledAutoRule(device)) stopAutoDeviceIfRunning(device, "auto_rule_disabled");
+
+      return res.json({
+        message: "Đã tắt cảm biến này khỏi setup tự động",
+        autoRules: autoRuleConfig,
+        sensors: getAutoRuleSensorList(),
+      });
+    }
+    if (!AUTO_RULE_DIRECTIONS.includes(direction)) {
+      return res.status(400).json({ message: "Chiều ngưỡng không hợp lệ" });
+    }
+    if (direction === "below" && !AUTO_RULE_SENSORS[sensor].minKey) {
+      return res.status(400).json({ message: "Cảm biến này không có ngưỡng dưới" });
+    }
+    if (direction === "above" && !AUTO_RULE_SENSORS[sensor].maxKey) {
+      return res.status(400).json({ message: "Cảm biến này không có ngưỡng trên" });
+    }
+    if (direction === "inside" && !AUTO_RULE_SENSORS[sensor].minKey && !AUTO_RULE_SENSORS[sensor].maxKey) {
+      return res.status(400).json({ message: "Cảm biến này chưa có ngưỡng sử dụng" });
+    }
+
+    const nextRules = normalizeAutoRuleConfig(autoRuleConfig);
+    nextRules[device][sensor][direction] = enabled;
+    autoRuleConfig = nextRules;
+    await saveSystemSetting("auto_rules", JSON.stringify(autoRuleConfig));
+
+    if (!hasAnyEnabledAutoRule(device)) stopAutoDeviceIfRunning(device, "auto_rule_disabled");
+
+    res.json({
+      message: enabled ? "Đã bật rule tự động" : "Đã tắt rule tự động",
+      autoRules: autoRuleConfig,
+      sensors: getAutoRuleSensorList(),
+    });
   });
 });
 
@@ -2035,46 +2518,50 @@ app.get("/auto-irrigation", (req, res) => {
 
 app.post("/auto-irrigation", (req, res) => {
   const { plant_id, irrigation_time, irrigation_duration, day_mask } = req.body;
+  const deviceType = normalizeAutoScheduleDevice(req.body.device_type);
 
   runQuery(res, async () => {
     if (!irrigation_time) {
-      return res.status(400).json({ message: "Vui lòng chọn giờ tưới" });
+      return res.status(400).json({ message: "Vui lòng chọn giờ chạy lịch tự động" });
     }
 
     await query(
       `INSERT INTO auto_settings
-      (plant_id, auto_mode, irrigation_time, irrigation_duration, is_active, day_mask)
-      VALUES (?, 1, ?, ?, 1, ?)`,
+      (plant_id, auto_mode, device_type, irrigation_time, irrigation_duration, is_active, day_mask)
+      VALUES (?, 1, ?, ?, ?, 1, ?)`,
       [
         plant_id || mainPlantId,
+        deviceType,
         irrigation_time,
         parseDuration(irrigation_duration),
         String(day_mask || "1111111").slice(0, 7),
       ]
     );
-    res.json({ message: "Đã lưu lịch tưới tự động" });
+    res.json({ message: "Đã lưu lịch điều khiển tự động" });
   });
 });
 
 app.put("/auto-irrigation/:id", (req, res) => {
   const { plant_id, irrigation_time, irrigation_duration, day_mask } = req.body;
+  const deviceType = normalizeAutoScheduleDevice(req.body.device_type);
 
   runQuery(res, async () => {
     if (!irrigation_time) {
-      return res.status(400).json({ message: "Vui lòng chọn giờ tưới" });
+      return res.status(400).json({ message: "Vui lòng chọn giờ chạy lịch tự động" });
     }
 
     const current = await query("SELECT * FROM auto_settings WHERE id=?", [req.params.id]);
     if (current.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy lịch tưới" });
+      return res.status(404).json({ message: "Không tìm thấy lịch tự động" });
     }
 
     await query(
       `UPDATE auto_settings
-      SET plant_id=?, irrigation_time=?, irrigation_duration=?, day_mask=?
+      SET plant_id=?, device_type=?, irrigation_time=?, irrigation_duration=?, day_mask=?
       WHERE id=?`,
       [
         plant_id || current[0].plant_id || mainPlantId,
+        deviceType,
         irrigation_time,
         parseDuration(irrigation_duration),
         String(day_mask || current[0].day_mask || "1111111").slice(0, 7),
@@ -2083,7 +2570,7 @@ app.put("/auto-irrigation/:id", (req, res) => {
     );
     // Xoa dau vet lan chay cu de lich vua sua co the kich hoat dung theo gio moi.
     clearAutoScheduleRunCache(req.params.id);
-    res.json({ message: "Đã cập nhật giờ tưới tự động" });
+    res.json({ message: "Đã cập nhật lịch điều khiển tự động" });
   });
 });
 
@@ -2094,7 +2581,7 @@ app.put("/auto-irrigation/:id/toggle", (req, res) => {
       req.params.id,
     ]);
     clearAutoScheduleRunCache(req.params.id);
-    res.json({ message: "Đã cập nhật trạng thái lịch tưới" });
+    res.json({ message: "Đã cập nhật trạng thái lịch tự động" });
   });
 });
 
@@ -2102,7 +2589,7 @@ app.delete("/auto-irrigation/:id", (req, res) => {
   runQuery(res, async () => {
     await query("DELETE FROM auto_settings WHERE id=?", [req.params.id]);
     clearAutoScheduleRunCache(req.params.id);
-    res.json({ message: "Đã xóa lịch tưới tự động" });
+    res.json({ message: "Đã xóa lịch điều khiển tự động" });
   });
 });
 
@@ -2137,18 +2624,32 @@ setInterval(() => {
       ) {
         lastAutoScheduleRuns.set(runKey, true);
         const seconds = parseDuration(row.irrigation_duration);
-        autoIrrigationActive = true;
-        irrigationStatus = true;
-        setDeviceCountdown(["irrigation"], seconds);
-        db.query("INSERT INTO irrigation_logs (amount,duration) VALUES (1,?)", [seconds]);
-        publishDeviceCommand({ device: "irrigation", state: "on", action: "schedule_irrigation_on", mode: "auto", duration: seconds, reason: "schedule", notify: false });
-        createAlert(`Tự động tưới theo lịch lúc ${time} trong ${seconds} giây`, "info", "action");
+        const device = normalizeAutoScheduleDevice(row.device_type);
+        const scheduleDevice = AUTO_SCHEDULE_DEVICES[device];
+        const countdownKeys = [scheduleDevice.countdownKey];
+
+        setAutoScheduleDeviceStatus(device, true);
+        setDeviceCountdown(countdownKeys, seconds);
+        logDeviceAction(scheduleDevice.deviceId, scheduleDevice.onAction, "auto");
+        if (device === "irrigation") {
+          db.query("INSERT INTO irrigation_logs (amount,duration) VALUES (1,?)", [seconds]);
+        }
+        publishDeviceCommand({
+          device,
+          state: "on",
+          action: scheduleDevice.onAction,
+          mode: "auto",
+          duration: seconds,
+          reason: "schedule",
+          notify: false,
+        });
+        createAlert(`Điều khiển tự động theo lịch: bật ${scheduleDevice.label} lúc ${time} trong ${seconds} giây`, "info", "action");
         setTimeout(() => {
-          if (fireProtectionActive) return;
-          autoIrrigationActive = false;
-          irrigationStatus = false;
-          clearDeviceCountdown(["irrigation"]);
-          publishDeviceCommand({ device: "irrigation", state: "off", action: "schedule_irrigation_off", mode: "auto", reason: "timer_finished" });
+          if (fireProtectionActive && ["irrigation", "spray"].includes(device)) return;
+          setAutoScheduleDeviceStatus(device, false);
+          clearDeviceCountdown(countdownKeys);
+          logDeviceAction(scheduleDevice.deviceId, scheduleDevice.offAction, "auto");
+          publishDeviceCommand({ device, state: "off", action: scheduleDevice.offAction, mode: "auto", reason: "timer_finished" });
         }, seconds * 1000);
       }
     });
@@ -2524,6 +3025,7 @@ function getSystemSnapshot() {
     coolingStatus,
     buzzerStatus,
     autoDisabled: { ...autoDisabled },
+    autoRules: autoRuleConfig,
   };
 }
 
@@ -2653,7 +3155,7 @@ app.post("/chatbot/knowledge/import-excel", (req, res) => {
       }
       const result = await importExcelKnowledge(req.file.buffer, req.file.originalname);
       res.json({
-        message: `Đã nạp ${result.importedCount} mục mới vào chatbot_knowledge_entries, bỏ qua ${result.skippedCount || 0} mục đã có`,
+        message: `Đã nạp ${result.mainImportedCount || 0} mục vào chatbot_knowledge_entries và ${result.diseaseImportedCount || 0} mục bệnh vào plant_disease_treatments, bỏ qua ${result.skippedCount || 0} mục đã có`,
         ...result,
         status: await getKnowledgeStatus(),
       });
@@ -2674,7 +3176,7 @@ app.post("/chatbot/knowledge/update-excel", (req, res) => {
       }
       const result = await updateExcelKnowledge(req.file.buffer, req.file.originalname);
       res.json({
-        message: `Đã sửa ${result.updatedCount} mục, thêm ${result.createdCount} mục mới, giữ nguyên ${result.unchangedCount} mục trong chatbot_knowledge_entries`,
+        message: `Đã sửa ${result.mainUpdatedCount || 0} mục chính và ${result.diseaseUpdatedCount || 0} mục bệnh; thêm ${result.createdCount} mục mới, giữ nguyên ${result.unchangedCount} mục`,
         ...result,
         status: await getKnowledgeStatus(),
       });
@@ -2782,6 +3284,7 @@ app.get("/report", (req, res) => {
       latest_device_command: recentDeviceCommands[0] || null,
       status: {
         coolingStatus,
+        coolingTargetTemp,
         irrigationStatus,
         fanStatus,
         sprayStatus,
@@ -2811,6 +3314,7 @@ app.get("/report", (req, res) => {
         deviceCountdowns: getDeviceCountdowns(),
         alertPreferences,
         autoDisabled,
+        autoRules: autoRuleConfig,
       },
     });
   });

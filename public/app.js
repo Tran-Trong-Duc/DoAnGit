@@ -34,6 +34,37 @@ let autoDisabledState = {
   cooling: false,
 };
 let autoIrrigationModeState = "sensor";
+const AUTO_RULE_DEVICE_OPTIONS = {
+  irrigation: { label: "Tưới tự động", buttonId: "autoSetupIrrigationButton" },
+  fan: { label: "Điều khiển quạt tự động", buttonId: "autoSetupFanButton" },
+  spray: { label: "Phun làm mát tự động", buttonId: "autoSetupSprayButton" },
+};
+const AUTO_SCHEDULE_DEVICE_OPTIONS = {
+  irrigation: { label: "Bơm tưới", buttonId: "autoScheduleIrrigationButton" },
+  fan: { label: "Quạt", buttonId: "autoScheduleFanButton" },
+  spray: { label: "Phun làm mát", buttonId: "autoScheduleSprayButton" },
+};
+const AUTO_RULE_SENSOR_OPTIONS = [
+  { key: "temperature", label: "Nhiệt độ", unit: "°C" },
+  { key: "humidity", label: "Độ ẩm không khí", unit: "%" },
+  { key: "soil_moisture", label: "Độ ẩm đất", unit: "%" },
+  { key: "light", label: "Ánh sáng", unit: " lux" },
+  { key: "gas", label: "Khí độc", unit: " ppm", noBelow: true },
+  { key: "flame", label: "Cảm biến lửa", fireOnly: true },
+];
+const AUTO_RULE_DIRECTIONS = [
+  { key: "below", label: "Dưới ngưỡng" },
+  { key: "inside", label: "Trong ngưỡng" },
+  { key: "above", label: "Trên ngưỡng" },
+];
+const DEFAULT_AUTO_RULE_STATE = {
+  irrigation: { soil_moisture: { below: true, above: false } },
+  fan: { temperature: { below: false, above: true }, humidity: { below: false, above: true }, gas: { below: false, above: true } },
+  spray: { temperature: { below: false, above: true }, humidity: { below: true, above: false } },
+};
+let activeAutoSetupDevice = "irrigation";
+let activeAutoScheduleDevice = "irrigation";
+let autoRulesState = createDefaultAutoRules();
 let currentAlert = null;
 let alertStream = null;
 let alertStreamReconnectTimer = null;
@@ -105,6 +136,36 @@ function openSystemForm(pageId, formAction) {
   window.setTimeout(() => {
     if (typeof formAction === "function") formAction();
   }, 80);
+}
+
+function focusSystemElement(selector) {
+  const target = document.querySelector(selector);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (typeof target.focus === "function") target.focus();
+  if (target.tagName === "INPUT" && typeof target.select === "function") target.select();
+}
+
+function openSystemTarget(pageId, selector, beforeFocus) {
+  openSystemPage(pageId);
+  window.setTimeout(async () => {
+    if (typeof beforeFocus === "function") await beforeFocus();
+    window.setTimeout(() => focusSystemElement(selector), 80);
+  }, 80);
+}
+
+function openAutoSetupTarget(device) {
+  openSystemTarget("automation", "#autoRuleGrid", async () => {
+    await setAutoIrrigationMode("sensor");
+    setAutoSetupDevice(device);
+  });
+}
+
+function openAutoScheduleTarget(device) {
+  openSystemTarget("automation", "#autoScheduleArea", async () => {
+    await setAutoIrrigationMode("schedule");
+    setAutoScheduleDevice(device);
+  });
 }
 
 function getCurrentSearchQuery() {
@@ -194,7 +255,24 @@ const systemSearchActions = [
   { label: "Quản lý cây trồng", description: "Mở danh sách cây trồng và thông tin cây chính.", keywords: "cay trong cay chinh danh sach cay nguong cay mo ta ph dat ly tuong", run: () => openSystemPage("plants") },
   { label: "Thêm cây trồng mới", description: "Mở form thêm cây, ngưỡng môi trường và đất lý tưởng.", keywords: "them cay tao cay trong moi nguong anh sang nhiet do do am dat ly tuong", run: () => openSystemForm("plants", () => showPlantForm()) },
   { label: "Điều khiển hệ thống", description: "Mở điều khiển tưới, quạt, phun mát và làm mát.", keywords: "dieu khien tuoi bom tuoi quat phun mat lam mat thu cong thiet bi", run: () => openSystemPage("controls") },
-  { label: "Điều khiển tự động", description: "Mở chế độ tự động và lịch tưới tự động.", keywords: "tu dong auto lich tuoi hen gio tuoi theo lich cam bien", run: () => openSystemPage("automation") },
+  { label: "Điều khiển tưới thủ công", description: "Mở ô nhập thời gian tưới và nút bật/dừng bơm tưới.", keywords: "tuoi thu cong bom tuoi bat tuoi dung tuoi thoi gian tuoi manual irrigation dat kho can tuoi", run: () => openSystemTarget("controls", "#manualIrrigationDuration") },
+  { label: "Điều khiển quạt thủ công", description: "Mở ô thời gian quạt, bật hoặc dừng quạt.", keywords: "quat thu cong bat quat dung quat tat quat thoi gian quat fan nong vuon nong bi nong khi nong", run: () => openSystemTarget("controls", "#fanDuration") },
+  { label: "Điều khiển phun nước làm mát", description: "Mở ô thời gian phun nước/phun mát.", keywords: "phun nuoc phun mat phun suong bat phun dung phun spray lam mat vuon nong kho nong", run: () => openSystemTarget("controls", "#sprayDuration") },
+  { label: "Làm mát theo thời gian", description: "Mở chức năng chạy quạt và phun mát trong số giây đã nhập.", keywords: "lam mat theo thoi gian quat phun nuoc cooling timer bat lam mat dung lam mat", run: () => openSystemTarget("controls", "#coolingDuration") },
+  { label: "Làm mát tới nhiệt độ", description: "Mở chức năng làm mát liên tục tới nhiệt độ mục tiêu.", keywords: "lam mat den nhiet do muc tieu nhiet do mong muon target temp cooling target vuon nong giam nhiet", run: () => openSystemTarget("controls", "#targetTemp") },
+  { label: "Bật/dừng bơm tưới ngay", description: "Chạy hoặc dừng bơm tưới theo trạng thái hiện tại.", keywords: "bat tuoi ngay dung tuoi ngay tat bom tuoi bat bom tuoi tuoi cay dat kho", run: () => openSystemForm("controls", () => irrigate()) },
+  { label: "Bật/dừng quạt ngay", description: "Chạy hoặc dừng quạt theo trạng thái hiện tại.", keywords: "bat quat ngay dung quat ngay tat quat vuon nong bi nong fan", run: () => openSystemForm("controls", () => fanTimer()) },
+  { label: "Bật/dừng phun mát ngay", description: "Chạy hoặc dừng phun nước theo trạng thái hiện tại.", keywords: "bat phun ngay dung phun ngay tat phun phun nuoc phun mat spray", run: () => openSystemForm("controls", () => sprayTimer()) },
+  { label: "Điều khiển tự động", description: "Mở setup tự động và lịch điều khiển tự động.", keywords: "tu dong auto lich tuoi hen gio tuoi theo lich cam bien", run: () => openSystemPage("automation") },
+  { label: "Setup tự động theo cảm biến", description: "Mở vùng chọn ngưỡng/cảm biến để điều khiển thiết bị tự động.", keywords: "setup tu dong cam bien nguong tren nguong duoi nguong trong nguong khong su dung", run: () => openSystemTarget("automation", "#autoSetupArea", () => setAutoIrrigationMode("sensor")) },
+  { label: "Setup tưới tự động", description: "Mở cấu hình ngưỡng cảm biến cho bơm tưới tự động.", keywords: "setup tuoi tu dong bom tuoi cam bien do am dat dat kho tren nguong duoi nguong", run: () => openAutoSetupTarget("irrigation") },
+  { label: "Setup quạt tự động", description: "Mở cấu hình ngưỡng cảm biến cho quạt tự động.", keywords: "setup quat tu dong fan nhiet do do am khi doc bi nong vuon nong", run: () => openAutoSetupTarget("fan") },
+  { label: "Setup phun mát tự động", description: "Mở cấu hình ngưỡng cảm biến cho phun mát tự động.", keywords: "setup phun mat tu dong spray phun nuoc nhiet do do am vuon nong", run: () => openAutoSetupTarget("spray") },
+  { label: "Điều khiển tự động theo lịch", description: "Mở vùng lịch điều khiển tự động theo thời gian.", keywords: "dieu khien tu dong theo lich lich tu dong hen gio theo gio schedule", run: () => openSystemTarget("automation", "#autoScheduleArea", () => setAutoIrrigationMode("schedule")) },
+  { label: "Lịch bơm tưới tự động", description: "Mở danh sách và form lịch riêng cho bơm tưới.", keywords: "lich bom tuoi lich tuoi hen gio tuoi gio tuoi tu dong irrigation schedule", run: () => openAutoScheduleTarget("irrigation") },
+  { label: "Lịch quạt tự động", description: "Mở danh sách và form lịch riêng cho quạt.", keywords: "lich quat hen gio quat gio chay quat fan schedule tu dong", run: () => openAutoScheduleTarget("fan") },
+  { label: "Lịch phun mát tự động", description: "Mở danh sách và form lịch riêng cho phun mát.", keywords: "lich phun mat lich phun nuoc hen gio phun spray schedule", run: () => openAutoScheduleTarget("spray") },
+  { label: "Lưu lịch tự động", description: "Mở vùng lịch để nhập giờ, phút và thời gian chạy.", keywords: "luu lich tu dong them lich cap nhat lich gio phut thoi gian chay", run: () => openSystemTarget("automation", "#autoHour", () => setAutoIrrigationMode("schedule")) },
   { label: "Bật/tắt toàn bộ tự động", description: "Đổi trạng thái tự động cho toàn bộ thiết bị.", keywords: "bat tat tu dong auto toan bo che do tu dong tat auto bat auto thiet bi", run: () => openSystemForm("automation", () => toggleAllDeviceAuto()) },
   { label: "Bật/tắt bơm tưới tự động", description: "Đổi trạng thái tự động riêng cho bơm tưới.", keywords: "bat tat bom tuoi tu dong auto irrigation tuoi cay bom nuoc", run: () => openSystemForm("automation", () => toggleDeviceAuto("irrigation")) },
   { label: "Bật/tắt quạt tự động", description: "Đổi trạng thái tự động riêng cho quạt.", keywords: "bat tat quat tu dong auto fan lam mat khong khi", run: () => openSystemForm("automation", () => toggleDeviceAuto("fan")) },
@@ -216,6 +294,19 @@ const systemSearchActions = [
   { label: "Xuất Excel", description: "Xuất báo cáo dữ liệu ra file Excel.", keywords: "xuat excel tai excel bao cao du lieu", run: () => openSystemForm("reports", () => exportExcel()) },
   { label: "Cảnh báo", description: "Mở danh sách cảnh báo và trạng thái phòng cháy chữa cháy.", keywords: "canh bao alert pccc phong chay chua chay khi doc lua nhiet do vuot nguong", run: () => openSystemPage("alerts") },
   { label: "Tải lại cảnh báo", description: "Mở cảnh báo và tải lại danh sách mới nhất.", keywords: "tai lai canh bao refresh alert danh sach canh bao moi nhat", run: () => openSystemForm("alerts", () => loadAlerts(document.getElementById("alertRefreshButton"))) },
+  { label: "Đã xem cảnh báo hiện tại", description: "Xác nhận cảnh báo đang mở để ẩn thông báo.", keywords: "da xem canh bao xac nhan canh bao dong canh bao ack alert", run: () => openSystemForm("alerts", () => acknowledgeCurrentAlert()) },
+  { label: "Danh sách cảnh báo PCCC", description: "Mở khu phòng cháy chữa cháy và cảnh báo lửa/khói.", keywords: "pccc lua khoi khi doc phong chay chua chay canh bao chay fire", run: () => openSystemTarget("alerts", ".fire-safety-panel") },
+  { label: "Trợ lý AI cây trồng", description: "Mở khung chat nhanh với trợ lý cây trồng trong hệ thống.", keywords: "tro ly ai chatbot chat cay trong hoi cay benh nguong dieu kien song gemini mysql", run: () => openPlantChatbotModal() },
+  { label: "Mở ChatBot đầy đủ", description: "Chuyển sang trang ChatBot đầy đủ để hỏi và nạp dữ liệu.", keywords: "chatbot day du ai demo ai_demo chat bot nap du lieu excel sua nguon chat mau excel", run: (query) => openAiDemoChat(query) },
+  { label: "Nạp dữ liệu ChatBot bằng Excel", description: "Mở trang ChatBot để nạp file Excel tri thức cây trồng.", keywords: "nap du lieu chatbot excel file excel import knowledge tu khoa truong khoa thong tin", run: () => openAiDemoChat("nạp dữ liệu bằng file excel") },
+  { label: "Sửa nguồn chat bằng Excel", description: "Mở trang ChatBot để sửa/cập nhật nguồn tri thức bằng Excel.", keywords: "sua nguon chat sua du lieu chatbot update excel cap nhat thong tin sai", run: () => openAiDemoChat("sửa nguồn chat bằng excel") },
+  { label: "Tải mẫu Excel ChatBot", description: "Mở trang ChatBot tới phần mẫu Excel nạp dữ liệu.", keywords: "tai mau excel chatbot mau nap du lieu template excel ten cay tu khoa truong khoa", run: () => openAiDemoChat("mẫu excel chatbot") },
+  { label: "Sửa cây chính", description: "Mở form sửa cây chính hiện tại.", keywords: "sua cay chinh chinh sua thong tin cay nguong cay dat anh sang", run: () => openSystemForm("plants", () => showPlantForm(mainPlant?.id || null)) },
+  { label: "Chọn cây chính", description: "Mở danh sách cây để chọn cây chính trong vườn.", keywords: "chon cay chinh dat cay chinh danh sach cay trong vuon", run: () => openSystemPage("plants") },
+  { label: "Sửa thiết bị", description: "Mở danh sách thiết bị để chọn thiết bị cần sửa.", keywords: "sua thiet bi sua mqtt topic trang thai thiet bi cam bien bom quat", run: () => openSystemPage("devices") },
+  { label: "Sửa vườn", description: "Mở danh sách vườn để chọn vườn cần sửa.", keywords: "sua vuon chinh sua vuon vi tri thong tin thiet bi trong vuon", run: () => openSystemPage("gardens") },
+  { label: "Sửa thông tin đất", description: "Mở danh sách bản ghi đất để chọn mục cần sửa.", keywords: "sua thong tin dat sua ph loai dat toi xop thoat nuoc", run: () => openSystemPage("soil") },
+  { label: "Sửa bón phân", description: "Mở danh sách bón phân để chọn lần bón cần sửa.", keywords: "sua bon phan chinh sua phan bon so luong phuong phap", run: () => openSystemPage("fertilizers") },
 ];
 
 function findSystemSearchMatches(query) {
@@ -235,7 +326,7 @@ function findSystemSearchMatches(query) {
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 14);
 }
 
 function hideSystemSearchSuggestions() {
@@ -316,10 +407,11 @@ function renderSystemSearchSuggestions(query) {
 function executeSystemSuggestion(index) {
   const item = currentSystemSearchMatches[index];
   if (!item) return;
+  const currentQuery = getCurrentSearchQuery();
   hideSystemSearchSuggestions();
   const input = document.getElementById("globalPlantSearch");
   if (input) input.value = "";
-  item.action.run();
+  item.action.run(currentQuery);
 }
 
 function setInternalSearchStatus(message = "") {
@@ -929,12 +1021,10 @@ function ensurePlantChatModal() {
     '    <button class="secondary" type="button" data-close-plant-chat>Đóng</button>',
     "  </motion>",
     '  <motion id="plantChatScope" class="plant-chat-scope">',
-    "    <span>Gemini + MySQL nội bộ</span>",
     "    <span>Dữ liệu vườn</span>",
     "    <span>Cây trồng</span>",
     "    <span>Bệnh cây</span>",
     "    <span>Ngưỡng cảm biến</span>",
-    "    <span>Hội thoại nhiều lượt</span>",
     "  </motion>",
     '  <motion id="plantChatStatus" class="internal-search-status"></motion>',
     '  <motion id="plantChatResults" class="internal-search-results"></motion>',
@@ -1921,6 +2011,7 @@ function alertMsg(data) {
 }
 
 function showToast(message, type = "info", timeout = 2200) {
+  const text = String(message || "Đã cập nhật").trim();
   let container = document.getElementById("toastStack");
   if (!container) {
     container = document.createElement("div");
@@ -1929,10 +2020,20 @@ function showToast(message, type = "info", timeout = 2200) {
     document.body.appendChild(container);
   }
 
+  Array.from(container.children).forEach((item) => {
+    if (item.dataset.message === text && !item.classList.contains("hide")) item.remove();
+  });
+  while (container.children.length >= 4) {
+    container.lastElementChild?.remove();
+  }
+
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  toast.textContent = message || "Đã cập nhật";
-  container.appendChild(toast);
+  toast.dataset.message = text;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+  toast.textContent = text;
+  container.prepend(toast);
 
   window.setTimeout(() => {
     toast.classList.add("hide");
@@ -2358,16 +2459,154 @@ function isAutoModeDisabled() {
   return Object.values(autoDisabledState).every(Boolean);
 }
 
+function createDefaultAutoRules(source = DEFAULT_AUTO_RULE_STATE) {
+  const normalized = {};
+  Object.keys(AUTO_RULE_DEVICE_OPTIONS).forEach((device) => {
+    normalized[device] = {};
+    AUTO_RULE_SENSOR_OPTIONS.forEach((sensor) => {
+      normalized[device][sensor.key] = {};
+      AUTO_RULE_DIRECTIONS.forEach((direction) => {
+        const fallback = Boolean(DEFAULT_AUTO_RULE_STATE?.[device]?.[sensor.key]?.[direction.key]);
+        const value = source?.[device]?.[sensor.key]?.[direction.key];
+        normalized[device][sensor.key][direction.key] =
+          value === undefined || value === null ? fallback : Boolean(value);
+      });
+    });
+  });
+  return normalized;
+}
+
+function isAutoRuleEnabled(device, sensorKey, direction) {
+  return Boolean(autoRulesState?.[device]?.[sensorKey]?.[direction]);
+}
+
+function isAutoRuleUnused(device, sensorKey) {
+  return !AUTO_RULE_DIRECTIONS.some((direction) => isAutoRuleEnabled(device, sensorKey, direction.key));
+}
+
+function isAutoRuleDirectionDisabled(sensor, direction) {
+  if (direction === "unused") return false;
+  return Boolean(sensor.fireOnly || (sensor.noBelow && direction === "below"));
+}
+
+function renderAutoRuleSetup() {
+  Object.entries(AUTO_RULE_DEVICE_OPTIONS).forEach(([device, option]) => {
+    const button = document.getElementById(option.buttonId);
+    if (!button) return;
+    const active = activeAutoSetupDevice === device;
+    button.classList.toggle("state-on", active);
+    button.classList.toggle("state-off", !active);
+    button.classList.toggle("secondary", !active);
+  });
+
+  const grid = document.getElementById("autoRuleGrid");
+  if (!grid) return;
+
+  const deviceLabel = AUTO_RULE_DEVICE_OPTIONS[activeAutoSetupDevice]?.label || "Setup tự động";
+  grid.innerHTML = AUTO_RULE_SENSOR_OPTIONS.map((sensor) => {
+    if (sensor.fireOnly) {
+      return `
+        <div class="auto-rule-card fire">
+          <div>
+            <strong>${escapeHtml(sensor.label)}</strong>
+            <span>Phục vụ PCCC</span>
+          </div>
+          <div class="auto-rule-note">Không dùng</div>
+        </div>
+      `;
+    }
+
+    const buttons = AUTO_RULE_DIRECTIONS.map((direction) => {
+      const disabled = isAutoRuleDirectionDisabled(sensor, direction.key);
+      const active = isAutoRuleEnabled(activeAutoSetupDevice, sensor.key, direction.key);
+      const classes = active ? "state-on" : "secondary state-off";
+      return `
+        <button
+          type="button"
+          class="mini auto-rule-button ${classes}"
+          ${disabled ? "disabled" : ""}
+          onclick="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', '${direction.key}')"
+          title="${disabled ? "Cảm biến này không có ngưỡng dưới" : `${deviceLabel}: ${direction.label.toLowerCase()} ${sensor.label.toLowerCase()}`}"
+        >${escapeHtml(direction.label)}</button>
+      `;
+    }).join("");
+    const unusedActive = isAutoRuleUnused(activeAutoSetupDevice, sensor.key);
+    const unusedButton = `
+      <button
+        type="button"
+        class="mini auto-rule-button auto-rule-unused ${unusedActive ? "state-unused" : "secondary state-off"}"
+        onclick="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', 'unused')"
+        title="${deviceLabel}: không dùng ${sensor.label.toLowerCase()} để điều khiển tự động"
+      >Không sử dụng</button>
+    `;
+
+    return `
+      <div class="auto-rule-card">
+        <div>
+          <strong>${escapeHtml(sensor.label)}</strong>
+          <span>${escapeHtml(deviceLabel)}</span>
+        </div>
+        <div class="auto-rule-buttons">${buttons}${unusedButton}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setAutoSetupDevice(device) {
+  if (!AUTO_RULE_DEVICE_OPTIONS[device]) return;
+  activeAutoSetupDevice = device;
+  renderAutoRuleSetup();
+}
+
+function normalizeAutoScheduleDevice(device) {
+  return AUTO_SCHEDULE_DEVICE_OPTIONS[device] ? device : "irrigation";
+}
+
+function getAutoScheduleDeviceLabel(device) {
+  return AUTO_SCHEDULE_DEVICE_OPTIONS[normalizeAutoScheduleDevice(device)]?.label || "Bơm tưới";
+}
+
+function renderAutoScheduleDeviceButtons() {
+  Object.entries(AUTO_SCHEDULE_DEVICE_OPTIONS).forEach(([device, option]) => {
+    const button = document.getElementById(option.buttonId);
+    if (!button) return;
+    const active = activeAutoScheduleDevice === device;
+    button.classList.toggle("state-on", active);
+    button.classList.toggle("state-off", !active);
+    button.classList.toggle("secondary", !active);
+  });
+}
+
+function setAutoScheduleDevice(device) {
+  if (!AUTO_SCHEDULE_DEVICE_OPTIONS[device]) return;
+  const changedDevice = activeAutoScheduleDevice !== device;
+  if (changedDevice) {
+    autoScheduleEditId = null;
+    setAutoScheduleTimeInputs("");
+    const durationInput = document.getElementById("autoDuration");
+    if (durationInput) durationInput.value = "";
+  }
+  activeAutoScheduleDevice = device;
+  if (changedDevice && device === "irrigation") prefillAutoScheduleFromMainPlant();
+  renderAutoScheduleDeviceButtons();
+  renderAutoScheduleList();
+  renderAutoScheduleSummary();
+  updateAutoScheduleFormButtons();
+}
+
 function renderAutoIrrigationModeControls() {
   const controls = document.getElementById("autoIrrigationModeControls");
   const scheduleArea = document.getElementById("autoScheduleArea");
+  const setupArea = document.getElementById("autoSetupArea");
   const sensorButton = document.getElementById("sensorIrrigationModeButton");
   const scheduleButton = document.getElementById("scheduleIrrigationModeButton");
   const autoOff = isAutoModeDisabled();
   const scheduleMode = autoIrrigationModeState === "schedule";
+  const setupMode = !scheduleMode;
 
   if (controls) controls.classList.toggle("hidden", autoOff);
   if (scheduleArea) scheduleArea.classList.toggle("hidden", autoOff || !scheduleMode);
+  if (setupArea) setupArea.classList.toggle("hidden", autoOff || !setupMode);
 
   if (sensorButton) {
     sensorButton.classList.toggle("state-on", !scheduleMode);
@@ -2379,6 +2618,9 @@ function renderAutoIrrigationModeControls() {
     scheduleButton.classList.toggle("state-off", !scheduleMode);
     scheduleButton.classList.toggle("secondary", !scheduleMode);
   }
+
+  renderAutoRuleSetup();
+  renderAutoScheduleDeviceButtons();
 }
 
 function formatCountdown(seconds) {
@@ -2439,18 +2681,26 @@ function renderControlButtons(status = systemStatusState) {
   document.querySelectorAll("[data-device-control]").forEach((button) => {
     const key = button.dataset.deviceControl;
     const active = Boolean(controlStatusState[key]);
-    setStateButton(
-      button,
-      active,
-      button.dataset.onLabel || "Đang bật",
-      button.dataset.offLabel || "Tắt",
-      active ? "Thiết bị đang bật" : "Thiết bị đang tắt",
-      active ? "Thiết bị đang bật" : "Thiết bị đang tắt"
-    );
+    button.innerText = active ? "Dừng" : "Bật";
+    button.classList.toggle("control-running", active);
+    button.classList.toggle("control-ready", !active);
+    button.classList.toggle("danger", active);
+    button.classList.toggle("state-on", !active);
+    button.classList.toggle("state-off", false);
+    button.classList.remove("secondary");
+    button.setAttribute("aria-pressed", String(active));
+    button.title = active ? "Bấm để dừng thiết bị đang chạy" : "Bấm để bật thiết bị";
   });
 
   syncDeviceCountdowns(status.deviceCountdowns || {});
   renderDeviceCountdowns();
+}
+
+function isManualControlActive(device) {
+  if (Boolean(controlStatusState[device])) return true;
+  return Array.from(document.querySelectorAll(`[data-device-control="${device}"]`)).some((button) =>
+    button.classList.contains("control-running") || button.getAttribute("aria-pressed") === "true"
+  );
 }
 
 function renderEmergencyButton(status = systemStatusState) {
@@ -2466,21 +2716,35 @@ function renderEmergencyButton(status = systemStatusState) {
   });
 }
 
-function renderAutoScheduleSummary(setting) {
+function autoSchedulesForDevice(device = activeAutoScheduleDevice) {
+  const normalized = normalizeAutoScheduleDevice(device);
+  return autoSchedulesCache.filter((item) => normalizeAutoScheduleDevice(item.device_type) === normalized);
+}
+
+function renderAutoScheduleSummary(setting = null) {
   const panel = document.getElementById("autoScheduleSummary");
   if (!panel) return;
 
-  if (!setting) {
+  const device = activeAutoScheduleDevice;
+  const deviceLabel = getAutoScheduleDeviceLabel(device);
+  const schedule =
+    setting && normalizeAutoScheduleDevice(setting.device_type) === device
+      ? setting
+      : autoSchedulesForDevice(device).find((item) => Boolean(item.is_active)) || autoSchedulesForDevice(device)[0] || null;
+
+  if (!schedule) {
     panel.innerHTML = `
-      <div><span>Lịch tưới</span><strong>Chưa cài đặt</strong></div>
-      <div><span>Thời gian tưới</span><strong>--</strong></div>
+      <div><span>Thiết bị</span><strong>${escapeHtml(deviceLabel)}</strong></div>
+      <div><span>Lịch tự động</span><strong>Chưa cài đặt</strong></div>
+      <div><span>Thời gian chạy</span><strong>--</strong></div>
     `;
     return;
   }
 
   panel.innerHTML = `
-    <div><span>Giờ tưới</span><strong>${escapeHtml(String(setting.irrigation_time || "--").slice(0, 5))}</strong></div>
-    <div><span>Thời gian tưới</span><strong>${formatValue(setting.irrigation_duration, " giây")}</strong></div>
+    <div><span>Thiết bị</span><strong>${escapeHtml(deviceLabel)}</strong></div>
+    <div><span>Giờ chạy lịch</span><strong>${escapeHtml(String(schedule.irrigation_time || "--").slice(0, 5))}</strong></div>
+    <div><span>Thời gian chạy</span><strong>${formatValue(schedule.irrigation_duration, " giây")}</strong></div>
   `;
 }
 
@@ -2488,17 +2752,20 @@ function renderAutoScheduleList() {
   const list = document.getElementById("autoScheduleList");
   if (!list) return;
 
-  if (autoSchedulesCache.length === 0) {
-    list.innerHTML = `<div class="empty-state">Chưa có lịch tưới tự động.</div>`;
+  const schedules = autoSchedulesForDevice();
+  const deviceLabel = getAutoScheduleDeviceLabel(activeAutoScheduleDevice);
+  if (schedules.length === 0) {
+    list.innerHTML = `<div class="empty-state">Chưa có lịch cho ${escapeHtml(deviceLabel.toLowerCase())}.</div>`;
+    renderAutoScheduleSummary();
     return;
   }
 
-  list.innerHTML = autoSchedulesCache.map((item) => {
+  list.innerHTML = schedules.map((item) => {
     const isActive = Boolean(item.is_active);
     return `
       <div class="auto-row ${isActive ? "active" : ""} ${Number(item.id) === Number(autoScheduleEditId) ? "editing" : ""}">
         <div>
-          <strong>${escapeHtml(String(item.irrigation_time || "--").slice(0, 5))}</strong>
+          <strong>${escapeHtml(String(item.irrigation_time || "--").slice(0, 5))} · ${escapeHtml(deviceLabel)}</strong>
           <p>${escapeHtml(item.plant_name || `Plant ${item.plant_id || "--"}`)} · ${formatValue(item.irrigation_duration, " giây")} · ${isActive ? "Đang bật" : "Đang tắt"}</p>
         </div>
         <div class="plant-actions">
@@ -2509,6 +2776,7 @@ function renderAutoScheduleList() {
       </div>
     `;
   }).join("");
+  renderAutoScheduleSummary();
 }
 
 function renderAlertMuteButton() {
@@ -2767,6 +3035,7 @@ async function loadData() {
     }
     autoDisabledState = data.status?.autoDisabled || autoDisabledState;
     autoIrrigationModeState = data.status?.autoIrrigationMode || autoIrrigationModeState;
+    autoRulesState = createDefaultAutoRules(data.status?.autoRules || autoRulesState);
     alertMutedState = Boolean(data.status?.alertMuted);
     alertSettingsState = data.status?.alertPreferences || alertSettingsState;
     renderAlertSettings();
@@ -2779,7 +3048,7 @@ async function loadData() {
       autoSchedulesCache = data.auto_settings;
       renderAutoScheduleList();
     }
-    renderAutoScheduleSummary(data.latest_auto_setting || null);
+    renderAutoScheduleSummary();
     const latestUnreadAlert = data.latest_unread_alert || null;
     const latestUnreadIsFire = isFireResponseAlert(latestUnreadAlert);
     if (latestUnreadAlert && (!alertMutedState || latestUnreadIsFire)) {
@@ -3320,34 +3589,56 @@ async function deletePlant() {
   await deletePlantById(plantEditId.value);
 }
 
-async function irrigate() {
-  const data = await request("/irrigation", "POST", { duration: manualIrrigationDuration.value });
+async function runManualDevice(device, endpoint, payload = {}) {
+  const active = isManualControlActive(device);
+  const partialCoolingDevice = ["fan", "spray"].includes(device) && systemStatusState.coolingTargetTemp !== null;
+  const data = active
+    ? await request(`/manual-device/${device}/stop`, "POST")
+    : partialCoolingDevice
+      ? await request(`/manual-device/${device}/start`, "POST")
+      : await request(endpoint, "POST", payload);
+  if (!data.isError) {
+    if (data.status) {
+      systemStatusState = { ...systemStatusState, ...data.status };
+      renderControlButtons(data.status);
+      if (data.info) alertMsg(data);
+    } else {
+      const statusKeyByDevice = {
+        irrigation: "irrigationStatus",
+        fan: "fanStatus",
+        spray: "sprayStatus",
+        cooling: "coolingStatus",
+      };
+      systemStatusState = { ...systemStatusState, [statusKeyByDevice[device]]: !active };
+      if (device === "cooling") {
+        systemStatusState.fanStatus = !active;
+        systemStatusState.sprayStatus = !active;
+      }
+      renderControlButtons(systemStatusState);
+    }
+  }
   await loadData();
   if (data.isError) alertMsg(data);
+}
+
+async function irrigate() {
+  await runManualDevice("irrigation", "/irrigation", { duration: manualIrrigationDuration.value });
 }
 
 async function fanTimer() {
-  const data = await request("/fan-timer", "POST", { duration: fanDuration.value });
-  await loadData();
-  if (data.isError) alertMsg(data);
+  await runManualDevice("fan", "/fan-timer", { duration: fanDuration.value });
 }
 
 async function sprayTimer() {
-  const data = await request("/spray-timer", "POST", { duration: sprayDuration.value });
-  await loadData();
-  if (data.isError) alertMsg(data);
+  await runManualDevice("spray", "/spray-timer", { duration: sprayDuration.value });
 }
 
 async function coolingTimer() {
-  const data = await request("/cooling-timer", "POST", { duration: coolingDuration.value });
-  await loadData();
-  if (data.isError) alertMsg(data);
+  await runManualDevice("cooling", "/cooling-timer", { duration: coolingDuration.value });
 }
 
 async function coolingTarget() {
-  const data = await request("/cooling-target", "POST", { target_temp: targetTemp.value });
-  await loadData();
-  if (data.isError) alertMsg(data);
+  await runManualDevice("cooling", "/cooling-target", { target_temp: targetTemp.value });
 }
 
 async function toggleDeviceAuto(device) {
@@ -3384,6 +3675,21 @@ async function setAutoIrrigationMode(mode) {
   }
 }
 
+async function toggleAutoRule(device, sensor, direction) {
+  const sensorOption = AUTO_RULE_SENSOR_OPTIONS.find((item) => item.key === sensor);
+  if (!AUTO_RULE_DEVICE_OPTIONS[device] || !sensorOption || isAutoRuleDirectionDisabled(sensorOption, direction)) return;
+
+  const enabled = direction === "unused" ? false : !isAutoRuleEnabled(device, sensor, direction);
+  const data = await request("/auto-rules", "POST", { device, sensor, direction, enabled });
+  alertMsg(data);
+
+  if (!data.isError) {
+    autoRulesState = createDefaultAutoRules(data.autoRules || autoRulesState);
+    renderAutoRuleSetup();
+    await loadData();
+  }
+}
+
 async function toggleEmergency() {
   const data = await request("/emergency", "POST", {});
   if (data.isError) alertMsg(data);
@@ -3402,12 +3708,16 @@ async function toggleEmergency() {
 function updateAutoScheduleFormButtons() {
   const saveButton = document.getElementById("autoScheduleSaveButton");
   const cancelButton = document.getElementById("autoScheduleCancelButton");
+  const editingSchedule = autoSchedulesCache.find((item) => Number(item.id) === Number(autoScheduleEditId));
+  const editingActiveDevice =
+    editingSchedule && normalizeAutoScheduleDevice(editingSchedule.device_type) === activeAutoScheduleDevice;
+  const deviceLabel = getAutoScheduleDeviceLabel(activeAutoScheduleDevice).toLowerCase();
 
   if (saveButton) {
-    saveButton.innerText = autoScheduleEditId ? "Cập nhật giờ tưới" : "Lưu lịch tưới tự động";
+    saveButton.innerText = editingActiveDevice ? `Cập nhật lịch ${deviceLabel}` : `Lưu lịch ${deviceLabel}`;
   }
   if (cancelButton) {
-    cancelButton.classList.toggle("hidden", !autoScheduleEditId);
+    cancelButton.classList.toggle("hidden", !editingActiveDevice);
   }
 }
 
@@ -3455,8 +3765,10 @@ function editAutoSchedule(id) {
   if (!schedule) return;
 
   autoScheduleEditId = schedule.id;
+  activeAutoScheduleDevice = normalizeAutoScheduleDevice(schedule.device_type);
   setAutoScheduleTimeInputs(schedule.irrigation_time || "");
   autoDuration.value = schedule.irrigation_duration || "";
+  renderAutoScheduleDeviceButtons();
   updateAutoScheduleFormButtons();
   renderAutoScheduleList();
 }
@@ -3465,6 +3777,7 @@ function cancelAutoScheduleEdit() {
   autoScheduleEditId = null;
   setAutoScheduleTimeInputs("");
   autoDuration.value = "";
+  renderAutoScheduleDeviceButtons();
   updateAutoScheduleFormButtons();
   renderAutoScheduleList();
 }
@@ -3475,16 +3788,17 @@ async function setAutoIrrigation() {
   const duration = Number(autoDuration.value);
 
   if (!irrigationTime) {
-    showToast("Vui lòng nhập giờ từ 0-23 và phút từ 0-59", "warning");
+    showToast("Vui lòng nhập giờ chạy từ 0-23 và phút từ 0-59", "warning");
     return;
   }
   if (!Number.isFinite(duration) || duration <= 0) {
-    showToast("Vui lòng nhập thời gian tưới lớn hơn 0 giây", "warning");
+    showToast("Vui lòng nhập thời gian chạy lớn hơn 0 giây", "warning");
     return;
   }
 
   const payload = {
     plant_id: mainPlant?.id || 1,
+    device_type: activeAutoScheduleDevice,
     irrigation_time: irrigationTime,
     irrigation_duration: duration,
   };
@@ -3497,6 +3811,7 @@ async function setAutoIrrigation() {
     autoScheduleEditId = null;
     setAutoScheduleTimeInputs("");
     autoDuration.value = "";
+    renderAutoScheduleDeviceButtons();
     updateAutoScheduleFormButtons();
     await loadAutoIrrigationSchedules();
     await loadData();
@@ -3509,8 +3824,9 @@ async function loadAutoIrrigationSchedules() {
 
   autoSchedulesCache = data;
   renderAutoScheduleList();
+  renderAutoScheduleDeviceButtons();
   updateAutoScheduleFormButtons();
-  renderAutoScheduleSummary(autoSchedulesCache.find((item) => item.is_active) || autoSchedulesCache[0] || null);
+  renderAutoScheduleSummary();
 }
 
 async function toggleAutoSchedule(id, isActive) {
@@ -3524,8 +3840,8 @@ async function toggleAutoSchedule(id, isActive) {
 
 async function deleteAutoSchedule(id) {
   if (!(await confirmAction({
-    title: "Xóa lịch tưới?",
-    message: "Bạn muốn xóa lịch tưới tự động này?",
+    title: "Xóa lịch tự động?",
+    message: "Bạn muốn xóa lịch điều khiển tự động này?",
     confirmText: "Xóa lịch",
   }))) return;
   const data = await request(`/auto-irrigation/${id}`, "DELETE");

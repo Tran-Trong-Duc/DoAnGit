@@ -637,8 +637,8 @@ body {
         </div>
         <div class="excel-tool-card">
           <strong>Mẫu Excel</strong>
-          <p>Mỗi dòng là một cây: ten_cay, tu_khoa, rồi tối đa 20 cặp truong_khoa/thong_tin; nên có 15-20 cặp nhưng thiếu vẫn nạp được.</p>
-          <div class="excel-template-example">ten_cay: Ớt | tu_khoa: ớt; ot; chili; cây ớt | truong_khoa1: thông tin | thong_tin1: Ớt là cây rau gia vị... | truong_khoa2: đất | thong_tin2: Đất phù hợp là đất tơi xốp...</div>
+          <p>File mẫu có 2 sheet: Tri thuc liệt kê cây và trường khóa hiện có; Benh chỉ dùng để thêm bệnh, cách trị và người đưa ra phác đồ.</p>
+          <div class="excel-template-example">Tri thuc: ten_cay, tu_khoa, truong_khoa1/thong_tin1 đến truong_khoa20/thong_tin20 | Benh: ten_cay, ten_benh, cach_tri, nguoi_dua_phac_do</div>
           <a class="excel-tool-action" id="excelTemplateDownload" href="/chatbot/knowledge/template-excel" download>Tải file mẫu</a>
           <button class="excel-tool-action" type="button" id="excelEditSourceButton">Sửa nguồn chat</button>
         </div>
@@ -1022,9 +1022,13 @@ async function uploadExcelKnowledge(file, mode = "import") {
     const updatedCount = data.updatedCount || 0;
     const createdCount = data.createdCount || 0;
     const unchangedCount = data.unchangedCount || 0;
+    const mainImportedCount = data.mainImportedCount || 0;
+    const diseaseImportedCount = data.diseaseImportedCount || 0;
+    const mainUpdatedCount = data.mainUpdatedCount || 0;
+    const diseaseUpdatedCount = data.diseaseUpdatedCount || 0;
     excelUploadStatus.textContent = isEditMode
-      ? `Đã sửa ${updatedCount} mục, thêm ${createdCount} mục, giữ nguyên ${unchangedCount} mục từ ${plantCount} cây.`
-      : `Đã nạp ${importedCount} mục vào chatbot_knowledge_entries từ ${plantCount} cây, bỏ qua ${skippedCount} mục đã có.`;
+      ? `Đã sửa ${mainUpdatedCount} mục chính và ${diseaseUpdatedCount} mục bệnh; thêm ${createdCount} mục, giữ nguyên ${unchangedCount} mục từ ${plantCount} cây.`
+      : `Đã nạp ${mainImportedCount} mục chính và ${diseaseImportedCount} mục bệnh từ ${plantCount} cây, bỏ qua ${skippedCount} mục đã có.`;
     const names = (data.entries || []).map((entry) => entry.topic).filter(Boolean).slice(0, 5);
     const assistantMessage = {
       role: "assistant",
@@ -1036,7 +1040,7 @@ async function uploadExcelKnowledge(file, mode = "import") {
             "Bạn có thể hỏi lại ngay để kiểm tra nội dung đã sửa.",
           ].filter(Boolean).join("\n")
         : [
-            `Đã nạp ${importedCount} mục mới vào chatbot_knowledge_entries từ ${plantCount} cây.`,
+            `Đã nạp ${mainImportedCount} mục chính và ${diseaseImportedCount} mục bệnh từ ${plantCount} cây.`,
             skippedCount ? `Đã bỏ qua ${skippedCount} mục tìm kiếm vì cây và trường khóa đã tồn tại.` : "",
             names.length ? `Từ khóa/chủ đề: ${names.join(", ")}.` : "",
             "Bạn có thể hỏi ngay bằng tên cây và nhóm khóa vừa nạp.",
