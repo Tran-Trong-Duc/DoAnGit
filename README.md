@@ -6,7 +6,7 @@ Giám sát môi trường - 6 cảm biến: nhiệt độ, độ ẩm, ánh sán
 
 Điều khiển thiết bị - Bơm tưới, quạt, phun sương, còi PCCC
 
-Tự động hóa - 5 chế độ tự động theo ngưỡng cảm biến
+Tự động hóa - 5 ngưỡng thiết lập cho chế độ tự động theo ngưỡng cảm biến
 
 Cảnh báo thông minh - Phát hiện vượt ngưỡng và nguy cơ cháy
 
