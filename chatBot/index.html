@@ -19,6 +19,9 @@
   --accent-strong: #146c3e;
   --warn: #a15b14;
   --shadow: 0 16px 40px rgba(20, 48, 32, 0.12);
+  --button-border: rgba(148, 163, 184, 0.72);
+  --button-off-border: rgba(107, 114, 128, 0.88);
+  --button-on-border: #facc15;
 }
 
 * {
@@ -90,7 +93,7 @@ body {
 .send-button,
 .tool-button,
 .suggestion-button {
-  border: 0;
+  border: 1px solid var(--button-border);
   border-radius: 8px;
   cursor: pointer;
   font: inherit;
@@ -126,7 +129,7 @@ body {
 .upload-button {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid var(--button-off-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
   color: #edf8f0;
@@ -138,7 +141,7 @@ body {
 
 .mode-button.active {
   background: #1f8f55;
-  border-color: #40c27b;
+  border-color: var(--button-on-border);
   color: #ffffff;
 }
 
@@ -182,7 +185,7 @@ body {
   justify-content: center;
   min-height: 36px;
   padding: 8px 10px;
-  border: 0;
+  border: 1px solid var(--button-border);
   border-radius: 8px;
   background: #1f8f55;
   color: #ffffff;
@@ -297,6 +300,7 @@ body {
   min-height: 34px;
   padding: 8px 12px;
   border-radius: 8px;
+  border: 1px solid var(--button-border);
   background: #1f8f55;
   color: #ffffff;
   font-size: 13px;
@@ -450,6 +454,7 @@ body {
 
 .suggestion-button.action {
   background: #2563eb;
+  border-color: var(--button-border);
 }
 
 .suggestion-button.action:hover {
@@ -508,7 +513,7 @@ body {
   height: 42px;
   background: #edf4ef;
   color: #244333;
-  border: 1px solid #d5e2d8;
+  border: 1px solid var(--button-off-border);
   font-weight: 800;
 }
 
@@ -522,6 +527,7 @@ body {
   background: var(--accent);
   color: #ffffff;
   font-weight: 800;
+  border-color: var(--button-border);
 }
 
 .send-button:disabled,

@@ -348,6 +348,7 @@ function runInternalSearchFromSuggestion() {
 const systemSearchActions = [
   { label: "Tổng quan hệ thống", description: "Xem cây chính, biểu đồ, cảm biến và trạng thái hệ thống.", keywords: "tong quan dashboard bieu do cam bien trang thai he thong cay chinh", run: () => openSystemPage("dashboard") },
   { label: "Quản lý cây trồng", description: "Mở danh sách cây trồng và thông tin cây chính.", keywords: "cay trong cay chinh danh sach cay nguong cay mo ta ph dat ly tuong", run: () => openSystemPage("plants") },
+  { label: "Thêm/Sửa/Xóa cây trồng", description: "Mở khu cây trồng để thêm, sửa hoặc xóa cây.", keywords: "them sua xoa cay trong crud cay danh sach cay quan ly cay", run: () => openSystemTarget("plants", "#plantList") },
   { label: "Thêm cây trồng mới", description: "Mở form thêm cây, ngưỡng môi trường và đất lý tưởng.", keywords: "them cay tao cay trong moi nguong anh sang nhiet do do am dat ly tuong", run: () => openSystemForm("plants", () => showPlantForm()) },
   { label: "Điều khiển hệ thống", description: "Mở điều khiển tưới, quạt, phun mát và làm mát.", keywords: "dieu khien tuoi bom tuoi quat phun mat lam mat thu cong thiet bi", run: () => openSystemPage("controls") },
   { label: "Điều khiển tưới thủ công", description: "Mở ô nhập thời gian tưới và nút bật/dừng bơm tưới.", keywords: "tuoi thu cong bom tuoi bat tuoi dung tuoi thoi gian tuoi manual irrigation dat kho can tuoi", run: () => openSystemTarget("controls", "#manualIrrigationDuration") },
@@ -364,6 +365,8 @@ const systemSearchActions = [
   { label: "Setup quạt tự động", description: "Mở cấu hình ngưỡng cảm biến cho quạt tự động.", keywords: "setup quat tu dong fan nhiet do do am khi doc bi nong vuon nong", run: () => openAutoSetupTarget("fan") },
   { label: "Setup phun mát tự động", description: "Mở cấu hình ngưỡng cảm biến cho phun mát tự động.", keywords: "setup phun mat tu dong spray phun nuoc nhiet do do am vuon nong", run: () => openAutoSetupTarget("spray") },
   { label: "Điều khiển tự động theo lịch", description: "Mở vùng lịch điều khiển tự động theo thời gian.", keywords: "dieu khien tu dong theo lich lich tu dong hen gio theo gio schedule", run: () => openSystemTarget("automation", "#autoScheduleArea", () => setAutoIrrigationMode("schedule")) },
+  { label: "Thêm/Sửa/Xóa lịch tự động", description: "Mở danh sách lịch để thêm, sửa hoặc xóa lịch điều khiển tự động.", keywords: "them sua xoa lich tu dong crud lich hen gio auto schedule", run: () => openSystemTarget("automation", "#autoScheduleList", () => setAutoIrrigationMode("schedule")) },
+  { label: "Thêm lịch tự động", description: "Mở form nhập giờ, phút và thời gian chạy cho lịch mới.", keywords: "them lich tu dong tao lich moi hen gio them hen gio auto schedule", run: () => openSystemTarget("automation", "#autoHour", () => setAutoIrrigationMode("schedule")) },
   { label: "Lịch bơm tưới tự động", description: "Mở danh sách và form lịch riêng cho bơm tưới.", keywords: "lich bom tuoi lich tuoi hen gio tuoi gio tuoi tu dong irrigation schedule", run: () => openAutoScheduleTarget("irrigation") },
   { label: "Lịch quạt tự động", description: "Mở danh sách và form lịch riêng cho quạt.", keywords: "lich quat hen gio quat gio chay quat fan schedule tu dong", run: () => openAutoScheduleTarget("fan") },
   { label: "Lịch phun mát tự động", description: "Mở danh sách và form lịch riêng cho phun mát.", keywords: "lich phun mat lich phun nuoc hen gio phun spray schedule", run: () => openAutoScheduleTarget("spray") },
@@ -378,12 +381,16 @@ const systemSearchActions = [
   { label: "Bật/tắt cảnh báo", description: "Tạm tắt hoặc bật lại thông báo cảnh báo mới.", keywords: "bat tat canh bao thong bao alert mute an hien popup", run: () => openSystemForm("alerts", () => toggleAlertMute()) },
   { label: "Dừng khẩn cấp", description: "Tắt toàn bộ thiết bị theo chế độ khẩn cấp.", keywords: "dung khan cap emergency stop tat tat ca thiet bi tat toan bo", run: () => openSystemForm("dashboard", () => toggleEmergency()) },
   { label: "Quản lý bón phân", description: "Xem và ghi nhận lịch sử bón phân.", keywords: "bon phan phan bon lich su bon phan so luong phuong phap", run: () => openSystemPage("fertilizers") },
+  { label: "Thêm/Sửa/Xóa bón phân", description: "Mở danh sách bón phân để thêm, sửa hoặc xóa lần bón.", keywords: "them sua xoa bon phan crud phan bon lich su bon phan", run: () => openSystemTarget("fertilizers", "#fertilizerList") },
   { label: "Thêm bón phân mới", description: "Mở form thêm thông tin bón phân.", keywords: "them bon phan tao lan bon phan moi ghi nhan phan bon", run: () => openSystemForm("fertilizers", () => showFertilizerForm()) },
   { label: "Theo dõi đất", description: "Xem pH, loại đất, độ tơi xốp và thoát nước thực tế.", keywords: "theo doi dat ph dat loai dat toi xop thoat nuoc dat thuc te", run: () => openSystemPage("soil") },
+  { label: "Thêm/Sửa/Xóa thông tin đất", description: "Mở danh sách đất để thêm, sửa hoặc xóa bản ghi đất.", keywords: "them sua xoa thong tin dat crud dat ph loai dat soil", run: () => openSystemTarget("soil", "#soilRecordList") },
   { label: "Thêm thông tin đất", description: "Mở form thêm bản ghi đất thực tế trong vườn.", keywords: "them thong tin dat ban ghi dat ph loai dat do toi xop kha nang thoat nuoc", run: () => openSystemForm("soil", () => showSoilRecordForm()) },
   { label: "Quản lý vườn", description: "Mở danh sách vườn và thông tin thiết bị trong vườn.", keywords: "quan ly vuon danh sach vuon vi tri thiet bi trong vuon", run: () => openSystemPage("gardens") },
+  { label: "Thêm/Sửa/Xóa vườn", description: "Mở danh sách vườn để thêm, sửa hoặc xóa vườn.", keywords: "them sua xoa vuon crud quan ly vuon danh sach vuon", run: () => openSystemTarget("gardens", "#gardenList") },
   { label: "Thêm vườn mới", description: "Mở form thêm vườn.", keywords: "them vuon tao vuon moi vi tri user id thong tin thiet bi", run: () => openSystemForm("gardens", () => showGardenForm()) },
   { label: "Quản lý thiết bị", description: "Mở danh sách thiết bị, trạng thái và MQTT topic.", keywords: "thiet bi cam bien bom quat coi relay mqtt topic online offline", run: () => openSystemPage("devices") },
+  { label: "Thêm/Sửa/Xóa thiết bị", description: "Mở danh sách thiết bị để thêm, sửa hoặc xóa thiết bị.", keywords: "them sua xoa thiet bi crud cam bien bom quat phun coi mqtt", run: () => openSystemTarget("devices", "#deviceList") },
   { label: "Thêm thiết bị mới", description: "Mở form thêm thiết bị.", keywords: "them thiet bi tao thiet bi moi cam bien bom quat phun coi mqtt", run: () => openSystemForm("devices", () => showDeviceForm()) },
   { label: "Xem báo cáo", description: "Mở dữ liệu cảm biến, log thiết bị và lịch sử tưới.", keywords: "bao cao report du lieu cam bien log thiet bi lich su tuoi excel", run: () => openSystemPage("reports") },
   { label: "Xuất Excel", description: "Xuất báo cáo dữ liệu ra file Excel.", keywords: "xuat excel tai excel bao cao du lieu", run: () => openSystemForm("reports", () => exportExcel()) },
@@ -397,11 +404,18 @@ const systemSearchActions = [
   { label: "Sửa nguồn chat bằng Excel", description: "Mở trang ChatBot để sửa/cập nhật nguồn tri thức bằng Excel.", keywords: "sua nguon chat sua du lieu chatbot update excel cap nhat thong tin sai", run: () => openAiDemoChat("sửa nguồn chat bằng excel") },
   { label: "Tải mẫu Excel ChatBot", description: "Mở trang ChatBot tới phần mẫu Excel nạp dữ liệu.", keywords: "tai mau excel chatbot mau nap du lieu template excel ten cay tu khoa truong khoa", run: () => openAiDemoChat("mẫu excel chatbot") },
   { label: "Sửa cây chính", description: "Mở form sửa cây chính hiện tại.", keywords: "sua cay chinh chinh sua thong tin cay nguong cay dat anh sang", run: () => openSystemForm("plants", () => showPlantForm(mainPlant?.id || null)) },
+  { label: "Xóa cây trồng", description: "Mở danh sách cây trồng để chọn cây cần xóa.", keywords: "xoa cay xoa cay trong delete plant remove plant danh sach cay", run: () => openSystemTarget("plants", "#plantList") },
   { label: "Chọn cây chính", description: "Mở danh sách cây để chọn cây chính trong vườn.", keywords: "chon cay chinh dat cay chinh danh sach cay trong vuon", run: () => openSystemPage("plants") },
   { label: "Sửa thiết bị", description: "Mở danh sách thiết bị để chọn thiết bị cần sửa.", keywords: "sua thiet bi sua mqtt topic trang thai thiet bi cam bien bom quat", run: () => openSystemPage("devices") },
+  { label: "Xóa thiết bị", description: "Mở danh sách thiết bị để chọn thiết bị cần xóa.", keywords: "xoa thiet bi delete device remove device cam bien bom quat mqtt", run: () => openSystemTarget("devices", "#deviceList") },
   { label: "Sửa vườn", description: "Mở danh sách vườn để chọn vườn cần sửa.", keywords: "sua vuon chinh sua vuon vi tri thong tin thiet bi trong vuon", run: () => openSystemPage("gardens") },
+  { label: "Xóa vườn", description: "Mở danh sách vườn để chọn vườn cần xóa.", keywords: "xoa vuon delete garden remove garden danh sach vuon", run: () => openSystemTarget("gardens", "#gardenList") },
   { label: "Sửa thông tin đất", description: "Mở danh sách bản ghi đất để chọn mục cần sửa.", keywords: "sua thong tin dat sua ph loai dat toi xop thoat nuoc", run: () => openSystemPage("soil") },
+  { label: "Xóa thông tin đất", description: "Mở danh sách bản ghi đất để chọn mục cần xóa.", keywords: "xoa thong tin dat xoa dat delete soil remove soil ph loai dat", run: () => openSystemTarget("soil", "#soilRecordList") },
   { label: "Sửa bón phân", description: "Mở danh sách bón phân để chọn lần bón cần sửa.", keywords: "sua bon phan chinh sua phan bon so luong phuong phap", run: () => openSystemPage("fertilizers") },
+  { label: "Xóa bón phân", description: "Mở danh sách bón phân để chọn lần bón cần xóa.", keywords: "xoa bon phan delete fertilizer remove fertilizer lich su bon phan", run: () => openSystemTarget("fertilizers", "#fertilizerList") },
+  { label: "Sửa lịch tự động", description: "Mở danh sách lịch để chọn lịch điều khiển tự động cần sửa.", keywords: "sua lich tu dong sua hen gio edit schedule auto", run: () => openSystemTarget("automation", "#autoScheduleList", () => setAutoIrrigationMode("schedule")) },
+  { label: "Xóa lịch tự động", description: "Mở danh sách lịch để chọn lịch điều khiển tự động cần xóa.", keywords: "xoa lich tu dong delete schedule remove schedule auto hen gio", run: () => openSystemTarget("automation", "#autoScheduleList", () => setAutoIrrigationMode("schedule")) },
 ];
 
 function findSystemSearchMatches(query) {
@@ -475,6 +489,7 @@ function renderSystemSearchSuggestions(query) {
     matches.forEach(({ action }, index) => {
       const row = document.createElement("div");
       row.className = "system-suggestion-row";
+      row.dataset.suggestionIndex = String(index);
 
       const copy = document.createElement("div");
       copy.className = "system-suggestion-copy";
@@ -1308,12 +1323,13 @@ function initInternalSearch() {
 
   suggestions?.addEventListener("click", (event) => {
     const button = event.target.closest("button");
-    if (!button) return;
-    if (button.dataset.internalSiteSearch === "true") {
+    if (button?.dataset.internalSiteSearch === "true") {
       runInternalSearchFromSuggestion();
       return;
     }
-    executeSystemSuggestion(Number(button.dataset.suggestionIndex));
+    const target = button || event.target.closest("[data-suggestion-index]");
+    if (!target) return;
+    executeSystemSuggestion(Number(target.dataset.suggestionIndex));
   });
 
   form.addEventListener("submit", (event) => {
@@ -2606,9 +2622,9 @@ function renderAutoRuleSetup() {
     if (sensor.fireOnly) {
       return `
         <div class="auto-rule-card fire">
-          <div>
+          <div class="auto-rule-fire-content">
             <strong>${escapeHtml(sensor.label)}</strong>
-            <span>Phục vụ PCCC</span>
+            <span class="auto-rule-fire-label">Phục vụ PCCC</span>
           </div>
           <div class="auto-rule-note">Không dùng</div>
         </div>
