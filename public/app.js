@@ -17,6 +17,7 @@ const MAX_PLANT_IMAGE_BYTES = 5 * 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const COUNTDOWN_SYNC_DRIFT_MS = 2500;
 const PLANT_CHAT_HISTORY_LIMIT = 16;
+const IRRIGATION_FLOW_RATE_STORAGE_KEY = "sg_irrigation_flow_rate_lpm";
 
 // Cache du lieu tren trinh duyet de form sua/chon co the dung lai ma khong goi API lap lai.
 let plantsCache = [];
@@ -98,6 +99,11 @@ let internalSearchQuery = "";
 let currentSystemSearchMatches = [];
 let plantChatMessages = [];
 let plantChatRequestId = 0;
+const savedIrrigationFlowRateRaw = localStorage.getItem(IRRIGATION_FLOW_RATE_STORAGE_KEY);
+const savedIrrigationFlowRate = savedIrrigationFlowRateRaw === null ? NaN : Number(savedIrrigationFlowRateRaw);
+let irrigationFlowRateLitersPerMinute = Number.isFinite(savedIrrigationFlowRate) && savedIrrigationFlowRate >= 0
+  ? savedIrrigationFlowRate
+  : 1;
 let cseElementReadyPromise = null;
 let cseElementCx = "";
 let cseRenderCounter = 0;
@@ -136,6 +142,95 @@ function openSystemForm(pageId, formAction) {
   window.setTimeout(() => {
     if (typeof formAction === "function") formAction();
   }, 80);
+}
+
+function formatWaterAmount(liters) {
+  const number = Number(liters);
+  if (!Number.isFinite(number) || number <= 0) return "0 L";
+  const rounded = number >= 10 ? Math.round(number) : Math.round(number * 10) / 10;
+  return `${rounded} L`;
+}
+
+function formatWaterFlowRate(litersPerMinute) {
+  const number = Number(litersPerMinute);
+  if (!Number.isFinite(number) || number <= 0) return "0 Lít/phút";
+  const rounded = Math.round(number * 10) / 10;
+  return `${rounded} Lít/phút`;
+}
+
+function updateWaterFlowEstimate() {
+  const durationInput = document.getElementById("manualIrrigationDuration");
+  const flowInput = document.getElementById("waterFlowRate");
+  const estimate = document.getElementById("irrigationWaterEstimate");
+  const saveButton = document.getElementById("saveWaterFlowRateButton");
+  if (!durationInput || !flowInput || !estimate) return;
+
+  const flowRate = Number(flowInput.value);
+  const previewFlowRate = Number.isFinite(flowRate) && flowRate >= 0 ? flowRate : 0;
+  const durationSeconds = Number(durationInput.value);
+  const waterLiters = Number.isFinite(durationSeconds) && durationSeconds > 0
+    ? previewFlowRate * durationSeconds / 60
+    : 0;
+  estimate.innerText = formatWaterFlowRate(previewFlowRate);
+  estimate.title = `Lượng nước theo thời gian tưới hiện tại: ${formatWaterAmount(waterLiters)}`;
+
+  if (saveButton) {
+    const changed = previewFlowRate !== irrigationFlowRateLitersPerMinute;
+    saveButton.innerText = changed ? "Gán lưu lượng" : "Đã gán";
+    saveButton.classList.toggle("is-saved", !changed);
+  }
+}
+
+function saveWaterFlowRate() {
+  const flowInput = document.getElementById("waterFlowRate");
+  const saveButton = document.getElementById("saveWaterFlowRateButton");
+  const flowRate = Number(flowInput?.value);
+
+  if (!Number.isFinite(flowRate) || flowRate < 0) {
+    if (saveButton) {
+      saveButton.innerText = "Nhập lại";
+      saveButton.classList.remove("is-saved");
+    }
+    flowInput?.focus();
+    return;
+  }
+
+  irrigationFlowRateLitersPerMinute = flowRate;
+  localStorage.setItem(IRRIGATION_FLOW_RATE_STORAGE_KEY, String(flowRate));
+  updateWaterFlowEstimate();
+  setWaterFlowEditorOpen(false);
+}
+
+function setWaterFlowEditorOpen(open) {
+  const editor = document.getElementById("waterFlowEditor");
+  const toggle = document.getElementById("waterFlowToggle");
+  const card = editor?.closest(".irrigation-control-card");
+  if (!editor || !toggle) return;
+
+  if (!open) {
+    const flowInput = document.getElementById("waterFlowRate");
+    if (flowInput) flowInput.value = String(irrigationFlowRateLitersPerMinute);
+  }
+  editor.classList.toggle("hidden", !open);
+  toggle.setAttribute("aria-expanded", String(open));
+  card?.classList.toggle("flow-editor-open", open);
+  updateWaterFlowEstimate();
+  if (open) document.getElementById("waterFlowRate")?.focus();
+}
+
+function toggleWaterFlowEditor() {
+  const editor = document.getElementById("waterFlowEditor");
+  if (!editor) return;
+  setWaterFlowEditorOpen(editor.classList.contains("hidden"));
+}
+
+function initWaterFlowControls() {
+  const durationInput = document.getElementById("manualIrrigationDuration");
+  const flowInput = document.getElementById("waterFlowRate");
+  if (flowInput) flowInput.value = String(irrigationFlowRateLitersPerMinute);
+  durationInput?.addEventListener("input", updateWaterFlowEstimate);
+  flowInput?.addEventListener("input", updateWaterFlowEstimate);
+  updateWaterFlowEstimate();
 }
 
 function focusSystemElement(selector) {
@@ -1018,7 +1113,10 @@ function ensurePlantChatModal() {
     '      <span class="eyebrow">Trợ lý</span>',
     '      <h2 id="plantChatTitle">Trợ lý cây trồng</h2>',
     "    </motion>",
-    '    <button class="secondary" type="button" data-close-plant-chat>Đóng</button>',
+    '    <div class="plant-chat-head-actions">',
+    '      <button class="plant-chat-open-full" type="button" data-open-ai-demo>Trang ChatBot</button>',
+    '      <button class="secondary" type="button" data-close-plant-chat>Đóng</button>',
+    "    </div>",
     "  </motion>",
     '  <motion id="plantChatScope" class="plant-chat-scope">',
     "    <span>Dữ liệu vườn</span>",
@@ -1040,6 +1138,10 @@ function ensurePlantChatModal() {
 
   document.body.appendChild(modal);
   modal.querySelector("[data-close-plant-chat]")?.addEventListener("click", closePlantChat);
+  modal.querySelector("[data-open-ai-demo]")?.addEventListener("click", () => {
+    const prompt = document.getElementById("plantChatInput")?.value || getCurrentSearchQuery();
+    openAiDemoChat(prompt);
+  });
 }
 
 function renderPlantChatMessages() {
@@ -1168,9 +1270,6 @@ function openPlantChatbotModal() {
   if (results) {
     results.innerHTML = `
       <div class="plant-chat-message assistant">
-        <p><strong>Trợ lý AI cây trồng</strong> — dùng dữ liệu vườn, tri thức MySQL và dữ liệu Excel đã nạp.</p>
-        <p class="plant-chat-muted">Trang chat đầy đủ: <button type="button" style="border: 1px solid #007bff; background: transparent; color: #007bff; text-decoration: underline; cursor: pointer;" data-open-ai-demo="1">Mở ChatBot</button></p>
-        <p class="plant-chat-welcome-label">Gợi ý nhanh:</p>
         <div class="plant-chat-actions plant-chat-welcome-actions">${exampleButtons}</div>
       </div>
     `;
@@ -3103,6 +3202,7 @@ setInterval(loadData, DATA_REFRESH_INTERVAL_MS);
 setInterval(renderDeviceCountdowns, 1000);
 initChartRangeControl();
 initAlertStream();
+initWaterFlowControls();
 loadData();
 loadPlants();
 loadGardens();

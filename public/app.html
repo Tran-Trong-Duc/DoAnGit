@@ -40,7 +40,7 @@
     
     <button class="nav" onclick="showPage('reports', this)">Báo cáo</button>
     <button class="nav" onclick="showPage('alerts', this)">🚨 Cảnh báo</button>
-    <button class="nav nav-chatbot" type="button" onclick="openPlantChatbotModal()">Trợ lý AI cây trồng</button>
+    <button class="nav nav-chatbot" type="button" onclick="openPlantChatbotModal()">Trợ lý Cây trồng</button>
     <button class="nav logout-nav" type="button" style="text-align: center;" onclick="logout()">Đăng xuất</button>
   </aside>
 
@@ -259,9 +259,27 @@
       <div class="panel" data-main-plant-panel="controls"></div>
       <div id="controlSensorPanel" class="panel realtime-sensor-panel" data-realtime-sensor-panel></div>
       <div class="control-grid">
-        <div class="panel control-card">
+        <div class="panel control-card irrigation-control-card">
+          <div class="water-flow-widget">
+            <button id="waterFlowToggle" class="water-flow-toggle" type="button" aria-expanded="false" onclick="toggleWaterFlowEditor()">
+              <span>Lưu lượng</span>
+              <strong id="irrigationWaterEstimate">1 Lít/phút</strong>
+              <span class="water-flow-arrow">⌄</span>
+            </button>
+            <div id="waterFlowEditor" class="water-flow-editor hidden">
+              <label class="input-unit-group water-flow-input">
+                <span class="input-prefix">Lưu lượng</span>
+                <input id="waterFlowRate" type="number" min="0" step="0.1" value="1" oninput="updateWaterFlowEstimate()" />
+                <span class="input-suffix">Lít/phút</span>
+              </label>
+              <button id="saveWaterFlowRateButton" class="water-flow-save is-saved" type="button" onclick="saveWaterFlowRate()">Đã gán</button>
+            </div>
+          </div>
           <h2>Điều khiển tưới</h2>
-          <input style="text-align: center;" id="manualIrrigationDuration" placeholder="Thời gian tưới (giây)" />
+          <label class="input-unit-group control-duration-field">
+            <input id="manualIrrigationDuration" type="number" min="1" placeholder="Thời gian tưới" oninput="updateWaterFlowEstimate()" />
+            <span class="input-suffix">giây</span>
+          </label>
           <div class="control-action">
             <button class="control-ready" style="width: 90%;; align-items: center;" data-device-control="irrigation" onclick="irrigate()">Bật</button>
             <span class="countdown-badge" data-countdown="irrigation">Đang tắt</span>
@@ -270,7 +288,10 @@
         </div>
         <div class="panel control-card">
           <h2>Bật quạt theo thời gian</h2>
-          <input id="fanDuration" placeholder="Thời gian bật quạt (giây)" />
+          <label class="input-unit-group control-duration-field">
+            <input id="fanDuration" type="number" min="1" placeholder="Thời gian bật quạt" />
+            <span class="input-suffix">giây</span>
+          </label>
           <div class="control-action">
             <button class="control-ready" data-device-control="fan" onclick="fanTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="fan">Đang tắt</span>
@@ -278,7 +299,10 @@
         </div>
         <div class="panel control-card">
           <h2>Phun nước làm mát</h2>
-          <input id="sprayDuration" placeholder="Thời gian phun nước (giây)" />
+          <label class="input-unit-group control-duration-field">
+            <input id="sprayDuration" type="number" min="1" placeholder="Thời gian phun nước" />
+            <span class="input-suffix">giây</span>
+          </label>
           <div class="control-action">
             <button class="control-ready" data-device-control="spray" onclick="sprayTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="spray">Đang tắt</span>
@@ -286,7 +310,10 @@
         </div>
         <div class="panel control-card">
           <h2>Quạt + phun nước</h2>
-          <input id="coolingDuration" placeholder="Thời gian làm mát (giây)" />
+          <label class="input-unit-group control-duration-field">
+            <input id="coolingDuration" type="number" min="1" placeholder="Thời gian làm mát" />
+            <span class="input-suffix">giây</span>
+          </label>
           <div class="control-action">
             <button class="control-ready" data-device-control="cooling" onclick="coolingTimer()">Bật</button>
             <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
@@ -294,7 +321,10 @@
         </div>
         <div class="panel control-card">
           <h2>Làm mát tới nhiệt độ</h2>
-          <input type="number" id="targetTemp" step="0.1" placeholder="Nhiệt độ mục tiêu trong ngưỡng cây" />
+          <label class="input-unit-group control-duration-field">
+            <input type="number" id="targetTemp" step="0.1" placeholder="Nhiệt độ mục tiêu" />
+            <span class="input-suffix">°C</span>
+          </label>
           <div class="control-action">
             <button class="control-ready" data-device-control="cooling" onclick="coolingTarget()">Bật</button>
             <span class="countdown-badge" data-countdown="cooling">Đang tắt</span>
@@ -333,10 +363,22 @@
               <button id="autoScheduleSprayButton" type="button" class="secondary" onclick="setAutoScheduleDevice('spray')">Phun làm mát</button>
             </div>
             <div id="autoScheduleSummary" class="auto-summary"></div>
-            <div class="form-grid">
-              <input type="number" id="autoHour" min="0" max="23" placeholder="Giờ chạy lịch (0-23)" />
-              <input type="number" id="autoMinute" min="0" max="59" placeholder="Phút chạy lịch (0-59)" />
-              <input type="number" id="autoDuration" min="1" placeholder="Thời gian chạy tự động (giây)" />
+            <div class="form-grid auto-schedule-form">
+              <label class="input-unit-group auto-input-group">
+                <span class="input-prefix">Giờ chạy</span>
+                <input type="number" id="autoHour" min="0" max="23" placeholder="0-23" />
+                <span class="input-suffix">giờ</span>
+              </label>
+              <label class="input-unit-group auto-input-group">
+                <span class="input-prefix">Phút chạy</span>
+                <input type="number" id="autoMinute" min="0" max="59" placeholder="0-59" />
+                <span class="input-suffix">phút</span>
+              </label>
+              <label class="input-unit-group auto-input-group form-wide">
+                <span class="input-prefix">Thời gian</span>
+                <input type="number" id="autoDuration" min="1" placeholder="Thời gian chạy" />
+                <span class="input-suffix">giây</span>
+              </label>
             </div>
             <div class="row">
               <button id="autoScheduleSaveButton" onclick="setAutoIrrigation()">Lưu lịch điều khiển tự động</button>

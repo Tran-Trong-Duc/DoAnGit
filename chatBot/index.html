@@ -27,7 +27,9 @@
 
 body {
   margin: 0;
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
@@ -36,10 +38,18 @@ body {
 .app-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-right: 1px solid var(--line);
   background: #10231a;
   color: #f4fbf6;
@@ -239,9 +249,11 @@ body {
 
 .main {
   min-width: 0;
+  height: 100vh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -330,6 +342,8 @@ body {
 .chat-area {
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
   padding: 28px 24px 120px;
 }
 
@@ -649,7 +663,7 @@ body {
     <div class="side-section">
       <div class="side-title">Câu hỏi mẫu</div>
       <button class="prompt-chip" data-prompt="Cà chua bị vàng lá, đất hơi ẩm thấp thì nên xử lý thế nào?">Cà chua bị vàng lá, đất hơi ẩm thấp thì nên xử lý thế nào?</button>
-      <button class="prompt-chip" data-prompt="Cho tôi ngưỡng nhiệt độ, độ ẩm và ánh sáng lý tưởng cho rau xà lách.">Ngưỡng lý tưởng cho rau xà lách</button>
+      <button class="prompt-chip" data-prompt="Cho tôi ngưỡng nhiệt độ, độ ẩm và ánh sáng lý tưởng cho ớt.">Ngưỡng lý tưởng cho ớt</button>
       <button class="prompt-chip" data-prompt="Lá dưa leo có phấn trắng thì nguyên nhân và cách phòng trị là gì?">Dưa leo có phấn trắng</button>
       <button class="prompt-chip" data-prompt="Hãy lập quy trình chăm sóc húng quế trong nhà kính nhỏ.">Quy trình chăm sóc húng quế</button>
     </div>
@@ -681,10 +695,10 @@ body {
           <h2>Hỏi đúng trọng tâm, nhận câu trả lời có phân tích.</h2>
           <p>Bot này được thiết kế để trả lời như ChatGPT nhưng giữ trong phạm vi nông nghiệp thông minh: cây trồng, bệnh cây, ngưỡng cảm biến, đất, nước, phân bón và điều kiện sống lý tưởng.</p>
           <div class="quick-grid">
-            <button class="prompt-chip" data-prompt="Cây ớt bị xoăn lá và chậm lớn thì nên kiểm tra những gì?">Cây ớt bị xoăn lá</button>
-            <button class="prompt-chip" data-prompt="Độ ẩm đất 28% có thấp quá cho cà chua không? Nên tưới bao lâu?">Độ ẩm đất 28% cho cà chua</button>
-            <button class="prompt-chip" data-prompt="So sánh bệnh sương mai và phấn trắng trên dưa leo.">Sương mai và phấn trắng</button>
-            <button class="prompt-chip" data-prompt="Điều kiện sống lý tưởng cho rau muống trong hệ thống IoT là gì?">Điều kiện cho rau muống</button>
+            <button style="color: #116bdf;" class="prompt-chip" data-prompt="Cây măng tây bị héo lá và chậm lớn thì nên kiểm tra những gì?">Cây măng tây bị héo lá</button>
+            <button style="color: #116bdf;" class="prompt-chip" data-prompt="Độ ẩm đất 28% có thấp quá cho cây chính không? Nên tưới bao lâu?">Độ ẩm đất 28% cho cây chính</button>
+            <button style="color: #116bdf;" class="prompt-chip" data-prompt="So sánh bệnh sương mai và phấn trắng trên dưa leo.">Sương mai và phấn trắng</button>
+            <button style="color: #116bdf;" class="prompt-chip" data-prompt="Điều kiện sống lý tưởng cho rau muống trong hệ thống IoT là gì?">Điều kiện cho rau muống</button>
           </div>
         </div>
       </div>
@@ -841,6 +855,16 @@ function renderSuggestions(suggestions = []) {
   `).join("")}</div>`;
 }
 
+function scrollChatToLatest() {
+  if (!chatArea) return;
+  const move = () => {
+    chatArea.scrollTop = chatArea.scrollHeight;
+  };
+  move();
+  requestAnimationFrame(move);
+  setTimeout(move, 80);
+}
+
 function openRecommendedAction(actionId) {
   const page = ACTION_PAGE_MAP[actionId] || "dashboard";
   const params = new URLSearchParams();
@@ -881,7 +905,7 @@ function addMessage(message, options = {}) {
 
   row.append(avatar, bubble);
   messageList.appendChild(row);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  scrollChatToLatest();
   return row;
 }
 
@@ -890,6 +914,7 @@ function renderHistory() {
   for (const message of state.messages) {
     addMessage(message);
   }
+  scrollChatToLatest();
 }
 
 function setBusy(value) {

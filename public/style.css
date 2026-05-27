@@ -93,7 +93,7 @@ body { margin: 0; font-family: "Inter", sans-serif; background: #07111f; color: 
 .live-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 5px rgba(34,197,94,.12); }
 .device-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .control-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-#controls .control-grid { grid-template-columns: repeat(5, minmax(126px, 1fr)); gap: 10px; padding: 12px; background: rgba(14, 164, 233, 0.244); border: 1px solid rgba(125, 211, 252, .38); border-radius: 18px; box-shadow: 0 18px 50px rgba(14, 165, 233, .13), inset 0 1px 0 rgba(255,255,255,.08); }
+#controls .control-grid { grid-template-columns: repeat(5, minmax(176px, 1fr)); gap: 10px; padding: 12px; background: rgba(14, 164, 233, 0.244); border: 1px solid rgba(125, 211, 252, .38); border-radius: 18px; box-shadow: 0 18px 50px rgba(14, 165, 233, .13), inset 0 1px 0 rgba(255,255,255,.08); }
 .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .panel, .device-card { background: rgba(15, 23, 42, .88); border: 1px solid rgba(148, 163, 184, .14); border-radius: 22px; padding: 22px; box-shadow: 0 18px 60px rgba(0,0,0,.23); margin-bottom: 18px;}
 .stat-card { background: rgba(15, 23, 42, .88); border: 1px solid rgba(148, 163, 184, .14); border-radius: 22px; padding: 22px; box-shadow: 0 18px 60px rgba(0,0,0,.23); margin-bottom: 18px;justify-content: center;align-items: center;text-align: center;}
@@ -190,14 +190,42 @@ button.mini { padding: 9px 11px; font-size: 12px; white-space: nowrap; }
 .auto-rule-button:disabled { opacity: .46; cursor: not-allowed; filter: none; }
 .auto-rule-note { align-self: end; padding: 9px 10px; border-radius: 8px; background: rgba(248,113,113,.12); color: #fecaca; font-weight: 800; font-size: 12px; text-align: center; }
 #autoModeToggle { min-width: 154px; font-weight: 700; }
-#controls .control-card { position: relative; min-height: 230px; padding: 60px 10px 14px; border-radius: 16px; }
+#controls .control-card { position: relative; min-height: 282px; display: grid; grid-template-rows: 42px 56px 86px auto; align-content: start; padding: 112px 10px 14px; border-radius: 16px; }
 #controls .control-card:last-child { background: rgba(180, 83, 9, .18); border-color: rgba(251, 146, 60, .24); }
-#controls .control-card h2 { min-height: 38px; margin: 0 96px 10px 0; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
-#controls .control-card p { margin: 8px 0 0; font-size: 12px; line-height: 1.35; }
+#controls .control-card h2 { min-height: 38px; display: flex; align-items: center; margin: 0 96px 0 0; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+#controls .control-card p { align-self: start; margin: 0; font-size: 12px; line-height: 1.35; }
 #controls .control-card input { width: 90%; min-height: 44px; display: block; margin: 12px auto 12px; padding: 10px 12px; border-radius: 14px; font-size: 13px; text-align: center; }
+.input-unit-group { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; padding: 8px 10px; background: #0b1729; border: 1px solid rgba(148,163,184,.2); border-radius: 14px; }
+.input-unit-group:has(input:focus) { border-color: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.1); }
+.input-unit-group input { width: 100%; min-width: 0; min-height: 28px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: center; }
+.input-unit-group input:focus { border-color: transparent; box-shadow: none; }
+.input-prefix, .input-suffix { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 5px 8px; border-radius: 9px; font-size: 12px; font-weight: 900; white-space: nowrap; }
+.input-prefix { color: #bae6fd; background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.2); }
+.input-suffix { color: #bbf7d0; background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.22); }
+#controls .control-card .input-unit-group { width: 90%; min-height: 44px; align-self: start; margin: 0 auto 12px; padding: 8px 10px; }
+#controls .control-card .control-duration-field { grid-template-columns: minmax(0, 1fr) auto; }
+#controls .control-card .input-unit-group input { width: 100%; min-height: 28px; margin: 0; padding: 0; font-size: 13px; text-align: center; }
+#controls .irrigation-control-card { min-height: 282px; padding-top: 112px; }
+#controls .irrigation-control-card.flow-editor-open { min-height: 390px; padding-top: 218px; }
+#controls .irrigation-control-card h2 { margin-right: 0; }
+#controls .irrigation-control-card .countdown-badge { top: 12px; }
+.water-flow-widget { position: absolute; top: 12px; left: 10px; right: 10px; z-index: 12; }
+#controls .irrigation-control-card .water-flow-widget { top: 62px; }
+.water-flow-toggle { width: 100%; min-height: 40px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; padding: 7px 9px; border-radius: 12px; background: rgba(14,165,233,.16); border: 1px solid rgba(125,211,252,.34); color: #e0f2fe; box-shadow: 0 14px 34px rgba(0,0,0,.18); }
+.water-flow-toggle span:first-child { color: #bae6fd; font-size: 11px; font-weight: 900; text-align: left; overflow-wrap: anywhere; }
+.water-flow-toggle strong { color: #f8fafc; font-size: 13px; white-space: nowrap; }
+.water-flow-arrow { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 999px; background: rgba(255,255,255,.12); color: #e0f2fe; font-size: 12px; transition: transform .18s ease; }
+.water-flow-toggle[aria-expanded="true"] .water-flow-arrow { transform: rotate(180deg); }
+.water-flow-editor { position: absolute; top: 46px; left: 0; right: 0; padding: 10px; border-radius: 14px; background: rgba(15,23,42,.98); border: 1px solid rgba(125,211,252,.32); box-shadow: 0 20px 50px rgba(0,0,0,.38); }
+.water-flow-input { margin: 0; grid-template-columns: auto minmax(54px, 1fr) auto; }
+.water-flow-save { width: 100%; min-height: 34px; margin-top: 10px; padding: 8px 10px; border-radius: 12px; font-size: 12px; font-weight: 900; background: linear-gradient(135deg, #16a34a, #14b8a6); color: #ecfdf5; border: 1px solid rgba(187,247,208,.28); }
+.water-flow-save.is-saved { background: rgba(34,197,94,.14); color: #bbf7d0; border-color: rgba(34,197,94,.3); box-shadow: none; }
+.auto-schedule-form { gap: 10px 14px; margin-bottom: 12px; }
+.auto-schedule-form .auto-input-group { margin: 0; min-height: 48px; background: rgba(11,23,41,.9); border-color: rgba(34,197,94,.2); }
+.auto-schedule-form .auto-input-group input { font-weight: 800; }
 .control-action { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .control-action button { min-height: 30px; min-width: 124px; flex: 0 0 auto; padding: 10px 13px; }
-#controls .control-action { min-height: 70px; align-items: center; justify-content: center; margin: 14px 0 8px; padding: 8px; }
+#controls .control-action { min-height: 70px; align-self: start; align-items: center; justify-content: center; margin: 0 0 8px; padding: 8px; }
 #controls .control-action button[data-device-control] { width: 90%; min-width: 0; min-height: 56px; border: 1px solid rgba(255,255,255,.18); border-radius: 16px; font-size: 18px; font-weight: 900; }
 #controls button[data-device-control].control-ready { background: linear-gradient(135deg, #16a34a, #14b8a6); color: #ecfdf5; }
 #controls button[data-device-control].control-running { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff7ed; box-shadow: 0 14px 30px rgba(220,38,38,.22); }
@@ -372,7 +400,7 @@ tr:hover td { background: rgba(148,163,184,.06); }
 @media (max-width: 1100px) { .plant-assistant-search, .site-search-bar { width: 100%; } .system-search-suggestions { width: 100%; } .internal-search-config { grid-template-columns: 1fr; } .internal-search-config a, .internal-search-config button { width: 100%; } }
 @media (max-width: 700px) { .plant-assistant-search, .site-search-bar, .plant-chat-form { grid-template-columns: 1fr; flex-direction: column; } .plant-assistant-search button, .site-search-bar button, .plant-chat-form button { width: 100%; } .internal-search-modal { padding: 12px; } .internal-search-dialog { height: calc(100vh - 24px); border-radius: 16px; } .internal-search-head, .internal-search-fallback { align-items: flex-start; flex-direction: column; } .internal-search-head button, .internal-search-fallback a { width: 100%; } }
 @media (max-width: 1100px) { .stats-grid, .device-grid, .control-grid, .two-col, .plant-layout, .threshold-grid, .form-grid, .fertilizer-summary, .realtime-grid, .auto-summary, .system-status-grid, .setting-grid, .chart-summary { grid-template-columns: 1fr; } .sidebar { position: static; width: 100%; height: auto; } .main { margin-left: 0; } .topbar { flex-direction: column; align-items: flex-start; } .topbar-actions { width: 100%; flex-wrap: wrap; } .topbar-actions .clock { flex: 1 1 180px; } .topbar-actions button { flex: 1 1 170px; } .plant-main-panel { position: static; } .plant-row, .garden-row, .fertilizer-row, .soil-row, .device-row { grid-template-columns: 72px minmax(0, 1fr); } .plant-actions { grid-column: 1 / -1; flex-wrap: wrap; } .main-plant-head { flex-direction: column; } .control-time-row, .auto-row, .control-action { grid-template-columns: 1fr; } }
-@media (max-width: 1100px) { #controls .control-grid { grid-template-columns: repeat(5, minmax(126px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; } }
+@media (max-width: 1100px) { #controls .control-grid { grid-template-columns: repeat(5, minmax(176px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; } }
 @media (max-width: 1100px) { .soil-note { grid-column: auto; } }
 @media (max-width: 700px) { .auto-mode-controls, .auto-setup-tabs, .auto-rule-buttons { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .chart-range-control, .chart-date-control { grid-template-columns: 1fr; } .chart-range-labels { grid-column: 1; } .chart-date-control button { width: 100%; } }
