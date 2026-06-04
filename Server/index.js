@@ -119,6 +119,29 @@ async function runQuery(res, work) {
   }
 }
 
+function optionalNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+async function insertWaterFlowRecord({ measurement_time, flow_rate, pressure = null, water_level = null, notes = null }) {
+  const measuredAt = measurement_time ? new Date(measurement_time) : new Date();
+  const flowRate = Number(flow_rate);
+
+  if (!Number.isFinite(flowRate) || flowRate < 0) {
+    throw new Error("flow_rate is required and must be a non-negative number");
+  }
+  if (!(measuredAt instanceof Date) || Number.isNaN(measuredAt.getTime())) {
+    throw new Error("measurement_time is not a valid date");
+  }
+
+  await query(
+    "INSERT INTO water_flow (measurement_time, flow_rate, pressure, water_level, notes) VALUES (?, ?, ?, ?, ?)",
+    [measuredAt, flowRate, optionalNumber(pressure), optionalNumber(water_level), notes || null]
+  );
+}
+
 function parseDuration(value, fallback = 1) {
   const duration = Number(value);
   return Number.isFinite(duration) && duration > 0 ? duration : fallback;
@@ -161,17 +184,44 @@ function toAutoRuleBoolean(value, fallback = false) {
   return ["1", "true", "on", "yes"].includes(String(value).toLowerCase());
 }
 
+function autoRuleDirectionsForSensor(sensorKey) {
+  const sensor = AUTO_RULE_SENSORS?.[sensorKey];
+  return Array.isArray(sensor?.directions) && sensor.directions.length > 0
+    ? sensor.directions
+    : AUTO_RULE_DIRECTIONS;
+}
+
+function isSingleSelectAutoRuleCard(device, sensorKey) {
+  return (
+    (device === "irrigation" && sensorKey === "soil_moisture") ||
+    ((device === "fan" || device === "spray") && sensorKey === "temperature")
+  );
+}
+
 function normalizeAutoRuleConfig(source = DEFAULT_AUTO_RULES) {
   const normalized = {};
   AUTO_RULE_DEVICES.forEach((device) => {
     normalized[device] = {};
     Object.keys(AUTO_RULE_SENSORS).forEach((sensorKey) => {
       normalized[device][sensorKey] = {};
+      const allowedDirections = autoRuleDirectionsForSensor(sensorKey);
       AUTO_RULE_DIRECTIONS.forEach((direction) => {
+        if (!allowedDirections.includes(direction)) {
+          normalized[device][sensorKey][direction] = false;
+          return;
+        }
         const fallback = DEFAULT_AUTO_RULES?.[device]?.[sensorKey]?.[direction] || false;
         const value = source?.[device]?.[sensorKey]?.[direction];
         normalized[device][sensorKey][direction] = toAutoRuleBoolean(value, fallback);
       });
+      if (isSingleSelectAutoRuleCard(device, sensorKey)) {
+        let selected = false;
+        AUTO_RULE_DIRECTIONS.forEach((direction) => {
+          if (!normalized[device][sensorKey][direction]) return;
+          if (selected) normalized[device][sensorKey][direction] = false;
+          selected = true;
+        });
+      }
     });
   });
   return normalized;
@@ -183,7 +233,7 @@ function autoRuleEnabled(device, sensorKey, direction) {
 
 function hasAnyEnabledAutoRule(device) {
   return Object.keys(AUTO_RULE_SENSORS).some((sensorKey) =>
-    AUTO_RULE_DIRECTIONS.some((direction) => autoRuleEnabled(device, sensorKey, direction))
+    autoRuleDirectionsForSensor(sensorKey).some((direction) => autoRuleEnabled(device, sensorKey, direction))
   );
 }
 
@@ -213,13 +263,21 @@ function getTriggeredAutoRules(device, readings, thresholds) {
   if (!AUTO_RULE_DEVICES.includes(device)) return [];
 
   const triggered = [];
+  let configuredSensorCount = 0;
+  let matchedSensorCount = 0;
   Object.entries(AUTO_RULE_SENSORS).forEach(([sensorKey, sensor]) => {
     if (sensor.fireOnly) return;
+    const enabledDirections = autoRuleDirectionsForSensor(sensorKey).filter((direction) =>
+      autoRuleEnabled(device, sensorKey, direction)
+    );
+    if (enabledDirections.length === 0) return;
+
+    configuredSensorCount += 1;
     const value = parseOptionalNumber(readings[sensor.readingKey]);
     if (!Number.isFinite(value)) return;
 
-    AUTO_RULE_DIRECTIONS.forEach((direction) => {
-      if (!autoRuleEnabled(device, sensorKey, direction)) return;
+    const sensorTriggers = [];
+    enabledDirections.forEach((direction) => {
       const threshold = getAutoRuleThreshold(sensorKey, direction, thresholds);
       let matched = false;
 
@@ -236,7 +294,7 @@ function getTriggeredAutoRules(device, readings, thresholds) {
       }
 
       if (matched) {
-        triggered.push({
+        sensorTriggers.push({
           device,
           sensorKey,
           direction,
@@ -249,9 +307,14 @@ function getTriggeredAutoRules(device, readings, thresholds) {
         });
       }
     });
+
+    if (sensorTriggers.length > 0) {
+      matchedSensorCount += 1;
+      triggered.push(...sensorTriggers);
+    }
   });
 
-  return triggered;
+  return configuredSensorCount > 0 && matchedSensorCount === configuredSensorCount ? triggered : [];
 }
 
 function formatAutoRuleReason(trigger) {
@@ -269,6 +332,55 @@ function formatAutoRuleReason(trigger) {
   }
   const side = trigger.direction === "below" ? "dưới" : "trên";
   return `${trigger.label} ${trigger.value}${trigger.unit} ${side} ngưỡng ${trigger.threshold}${trigger.unit}`;
+}
+
+function averageAutoStopThreshold(min, max) {
+  const minValue = parseOptionalNumber(min);
+  const maxValue = parseOptionalNumber(max);
+  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return null;
+  return (minValue + maxValue) / 2;
+}
+
+function shouldStopAtMidpoint(device, sensorKey, value, threshold) {
+  const enabledDirections = autoRuleDirectionsForSensor(sensorKey).filter((direction) =>
+    autoRuleEnabled(device, sensorKey, direction)
+  );
+  if (enabledDirections.includes("above") && !enabledDirections.includes("below")) {
+    return value <= threshold;
+  }
+  return value >= threshold;
+}
+
+function getAutoStopState(device, readings, thresholds) {
+  if (device === "irrigation") {
+    const threshold = averageAutoStopThreshold(thresholds.soilMin, thresholds.soilMax);
+    const value = parseOptionalNumber(readings.soil);
+    return {
+      hasThreshold: Number.isFinite(threshold),
+      reached:
+        Number.isFinite(threshold) &&
+        Number.isFinite(value) &&
+        shouldStopAtMidpoint(device, "soil_moisture", value, threshold),
+      value,
+      threshold,
+    };
+  }
+
+  if (device === "fan" || device === "spray") {
+    const threshold = averageAutoStopThreshold(thresholds.tempMin, thresholds.tempMax);
+    const value = parseOptionalNumber(readings.temperature);
+    return {
+      hasThreshold: Number.isFinite(threshold),
+      reached:
+        Number.isFinite(threshold) &&
+        Number.isFinite(value) &&
+        shouldStopAtMidpoint(device, "temperature", value, threshold),
+      value,
+      threshold,
+    };
+  }
+
+  return { hasThreshold: false, reached: false, value: null, threshold: null };
 }
 
 function normalizeAutoScheduleDevice(value) {
@@ -418,8 +530,10 @@ const AUTO_RULE_SENSORS = {
   gas: {
     label: "Khí độc",
     readingKey: "gas",
+    minKey: "gasMin",
     maxKey: "gasMax",
     unit: " ppm",
+    directions: ["below", "above"],
   },
   flame: {
     label: "Cảm biến lửa",
@@ -429,15 +543,15 @@ const AUTO_RULE_SENSORS = {
 };
 const DEFAULT_AUTO_RULES = {
   irrigation: {
-    soil_moisture: { below: true, above: false },
+    soil_moisture: { below: false, above: false },
   },
   fan: {
-    temperature: { below: false, above: true },
+    temperature: { below: false, above: false },
     humidity: { below: false, above: true },
     gas: { below: false, above: true },
   },
   spray: {
-    temperature: { below: false, above: true },
+    temperature: { below: false, above: false },
     humidity: { below: true, above: false },
   },
 };
@@ -729,6 +843,18 @@ async function ensureSchema() {
       KEY idx_plant_disease_author (nguoi_dua_phac_do),
       KEY idx_plant_disease_verified (is_verified),
       CHECK (benh_so BETWEEN 1 AND 10)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
+
+    // Luu luong nuoc - water_flow
+    await query(`CREATE TABLE IF NOT EXISTS water_flow (
+      id INT NOT NULL AUTO_INCREMENT,
+      measurement_time DATETIME NOT NULL,
+      flow_rate FLOAT NOT NULL,
+      pressure FLOAT NULL,
+      water_level FLOAT NULL,
+      notes VARCHAR(255) NULL,
+      created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
 
     await addColumnIfMissing("devices", "device_type", "VARCHAR(50) DEFAULT NULL");
@@ -1744,6 +1870,7 @@ client.on("message", (topic, message) => {
         soilMax,
         lightMin,
         lightMax,
+        gasMin: GAS_DANGER_THRESHOLD,
         gasMax: GAS_DANGER_THRESHOLD,
       };
 
@@ -1762,6 +1889,14 @@ client.on("message", (topic, message) => {
       const sensorIrrigationNeeded =
         useSensorAutoRules &&
         irrigationAutoTriggers.length > 0;
+      const fanStopState = getAutoStopState("fan", sensorReadings, thresholdValues);
+      const sprayStopState = getAutoStopState("spray", sensorReadings, thresholdValues);
+      const irrigationStopState = getAutoStopState("irrigation", sensorReadings, thresholdValues);
+      const fanShouldStop = autoDisabled.fan || (fanStopState.hasThreshold ? fanStopState.reached : !airQualityFanNeeded);
+      const sprayShouldStop = autoDisabled.spray || (sprayStopState.hasThreshold ? sprayStopState.reached : !humiditySprayNeeded);
+      const irrigationShouldStop =
+        autoDisabled.irrigation ||
+        (irrigationStopState.hasThreshold ? irrigationStopState.reached : !sensorIrrigationNeeded);
 
       // Khoa auto theo tung thiet bi: tat auto phun thi do am thap khong tu bat phun.
       if (humiditySprayNeeded && !autoSprayActive && !autoDisabled.spray) {
@@ -1774,7 +1909,7 @@ client.on("message", (topic, message) => {
         createAlert(`Tự động bật phun nước do ${reason}`, "info", "action");
       }
 
-      if (autoSprayActive && (!humiditySprayNeeded || autoDisabled.spray) && !fireProtectionActive) {
+      if (autoSprayActive && sprayShouldStop && !fireProtectionActive) {
         autoSprayActive = false;
         clearDeviceCountdown(["spray"]);
         logDeviceAction(3, "humidity_spray_off", "auto");
@@ -1785,7 +1920,7 @@ client.on("message", (topic, message) => {
             state: "off",
             action: "humidity_spray_off",
             mode: "auto",
-            reason: autoDisabled.spray ? "auto_disabled" : "auto_rule_normal",
+            reason: autoDisabled.spray ? "auto_disabled" : "auto_stop_threshold",
             notify: false,
           });
           createAlert("Tự động tắt phun nước vì chỉ số đã về ngưỡng", "info", "action");
@@ -1802,11 +1937,11 @@ client.on("message", (topic, message) => {
         createAlert(`Tự động bật quạt do ${reason}`, "info", "action");
       }
 
-      if (autoFanActive && !airQualityFanNeeded && !autoCoolingActive) {
+      if (autoFanActive && fanShouldStop && !autoCoolingActive) {
         autoFanActive = false;
         fanStatus = false;
         logDeviceAction(2, "air_quality_fan_off", "auto");
-        publishDeviceCommand({ device: "fan", state: "off", action: "air_quality_fan_off", mode: "auto", reason: "auto_rule_normal", notify: false });
+        publishDeviceCommand({ device: "fan", state: "off", action: "air_quality_fan_off", mode: "auto", reason: autoDisabled.fan ? "auto_disabled" : "auto_stop_threshold", notify: false });
         createAlert("Tự động tắt quạt vì chỉ số đã về ngưỡng", "info", "action");
       }
 
@@ -1830,7 +1965,7 @@ client.on("message", (topic, message) => {
       if (
         useSensorAutoRules &&
         autoIrrigationActive &&
-        (!sensorIrrigationNeeded || autoDisabled.irrigation) &&
+        irrigationShouldStop &&
         !fireProtectionActive
       ) {
         const duration = sensorIrrigationStartedAt
@@ -1849,7 +1984,7 @@ client.on("message", (topic, message) => {
           state: "off",
           action: "soil_irrigation_off",
           mode: "auto",
-          reason: autoDisabled.irrigation ? "auto_disabled" : "auto_rule_normal",
+          reason: autoDisabled.irrigation ? "auto_disabled" : "auto_stop_threshold",
           notify: false,
         });
         createAlert("Tự động tắt bơm tưới vì chỉ số đã về ngưỡng", "info", "action");
@@ -2189,21 +2324,58 @@ app.post("/manual-device/:device/start", (req, res) => {
 });
 
 app.post("/irrigation", (req, res) => {
-  const seconds = startTimedDevice({
-    duration: req.body.duration,
-    onStart: () => {
-      irrigationStatus = true;
-    },
-    onStop: () => {
-      irrigationStatus = false;
-    },
-    log: [1, "irrigation_on", "manual"],
-    commandOn: { device: "irrigation", state: "on", action: "irrigation_on", mode: "manual" },
-    commandOff: { device: "irrigation", state: "off", action: "irrigation_off", mode: "manual", reason: "timer_finished" },
-    timerKeys: ["irrigation"],
+  runQuery(res, async () => {
+    const seconds = startTimedDevice({
+      duration: req.body.duration,
+      onStart: () => {
+        irrigationStatus = true;
+      },
+      onStop: () => {
+        irrigationStatus = false;
+      },
+      log: [1, "irrigation_on", "manual"],
+      commandOn: { device: "irrigation", state: "on", action: "irrigation_on", mode: "manual" },
+      commandOff: { device: "irrigation", state: "off", action: "irrigation_off", mode: "manual", reason: "timer_finished" },
+      timerKeys: ["irrigation"],
+    });
+    await query("INSERT INTO irrigation_logs (amount,duration) VALUES (1,?)", [seconds]);
+
+    const flowRate = Number(req.body.flow_rate);
+    if (Number.isFinite(flowRate) && flowRate >= 0) {
+      await insertWaterFlowRecord({
+        flow_rate: flowRate,
+        notes: `Tưới thủ công ${seconds} giây`,
+      });
+    }
+
+    res.json({ message: `Đã tưới ${seconds} giây` });
   });
-  db.query("INSERT INTO irrigation_logs (amount,duration) VALUES (1,?)", [seconds]);
-  res.json({ message: `Đã tưới ${seconds} giây` });
+});
+
+// Luu du lieu luu luong nuoc
+app.post("/water-flow", (req, res) => {
+  runQuery(res, async () => {
+    const rawTime = req.body.measurement_time;
+    const flow_rate = Number(req.body.flow_rate);
+    const notes = req.body.notes || null;
+
+    if (!Number.isFinite(flow_rate) || flow_rate < 0) {
+      return res.status(400).json({ message: "flow_rate is required and must be a non-negative number" });
+    }
+    if (rawTime && Number.isNaN(new Date(rawTime).getTime())) {
+      return res.status(400).json({ message: "measurement_time is not a valid date" });
+    }
+
+    await insertWaterFlowRecord({
+      measurement_time: rawTime,
+      flow_rate,
+      pressure: req.body.pressure,
+      water_level: req.body.water_level,
+      notes,
+    });
+
+    res.json({ message: "Đã lưu dữ liệu lưu lượng nước" });
+  });
 });
 
 app.post("/fan-timer", (req, res) => {
@@ -2460,7 +2632,7 @@ app.post("/auto-rules", (req, res) => {
         sensors: getAutoRuleSensorList(),
       });
     }
-    if (!AUTO_RULE_DIRECTIONS.includes(direction)) {
+    if (!AUTO_RULE_DIRECTIONS.includes(direction) || !autoRuleDirectionsForSensor(sensor).includes(direction)) {
       return res.status(400).json({ message: "Chiều ngưỡng không hợp lệ" });
     }
     if (direction === "below" && !AUTO_RULE_SENSORS[sensor].minKey) {
@@ -2474,6 +2646,11 @@ app.post("/auto-rules", (req, res) => {
     }
 
     const nextRules = normalizeAutoRuleConfig(autoRuleConfig);
+    if (isSingleSelectAutoRuleCard(device, sensor) && enabled) {
+      AUTO_RULE_DIRECTIONS.forEach((ruleDirection) => {
+        nextRules[device][sensor][ruleDirection] = false;
+      });
+    }
     nextRules[device][sensor][direction] = enabled;
     autoRuleConfig = nextRules;
     await saveSystemSetting("auto_rules", JSON.stringify(autoRuleConfig));
@@ -2840,7 +3017,7 @@ app.delete("/soil-records/:id", (req, res) => {
 // REPORTS
 app.get("/alerts", (req, res) => {
   runQuery(res, async () => {
-    const rows = await query("SELECT * FROM alerts ORDER BY id DESC LIMIT 100");
+    const rows = await query("SELECT * FROM alerts ORDER BY created_at DESC, id DESC LIMIT 100");
     res.json(rows.filter((alertRow) => !isPcccCommandAlert(alertRow)));
   });
 });
@@ -3011,6 +3188,16 @@ const {
   createExcelTemplateBuffer,
   updateExcelKnowledge,
 } = require("../chatBot/excelImport");
+const {
+  listAccessibleTables,
+  getTableColumns,
+  getTablePreview,
+  queryTable,
+  getWaterFlowStats,
+  getIrrigationSchedule,
+  searchTables,
+  isTableSecure,
+} = require("../chatBot/mysqlDynamicQuery");
 
 function getSystemSnapshot() {
   return {
@@ -3184,6 +3371,76 @@ app.post("/chatbot/knowledge/update-excel", (req, res) => {
       res.status(err.statusCode || 500).json({ message: err.message });
     }
   });
+});
+
+app.get("/chatbot/tables", async (req, res) => {
+  try {
+    const tables = await listAccessibleTables();
+    res.json({ tables, secureTables: Array.from(new Set(["users", "admin", "accounts", "credentials", "passwords", "sessions", "auth", "api_keys", "tokens", "oauth", "system_settings"])) });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get("/chatbot/tables/:tableName", async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    if (isTableSecure(tableName)) {
+      return res.status(403).json({ message: `Bảng "${tableName}" không được phép truy cập.` });
+    }
+    const columns = await getTableColumns(tableName);
+    const preview = await getTablePreview(tableName, 10);
+    res.json({ tableName, columns, preview });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.get("/chatbot/query/:tableName", async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    if (isTableSecure(tableName)) {
+      return res.status(403).json({ error: `Bảng "${tableName}" không được phép truy cập.` });
+    }
+    const { limit = 100, offset = 0, orderBy, columns } = req.query;
+    const result = await queryTable(tableName, {
+      limit: Number(limit),
+      offset: Number(offset),
+      orderBy: orderBy || null,
+      columns: columns ? columns.split(",") : null,
+    });
+    if (result.error) {
+      res.status(400).json(result);
+    } else {
+      res.json(result);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/chatbot/water-flow/stats", async (req, res) => {
+  try {
+    const { startDate, endDate, limit = 100 } = req.query;
+    const stats = await getWaterFlowStats({ startDate, endDate, limit: Number(limit) });
+    if (stats.error) {
+      res.status(400).json(stats);
+    } else {
+      res.json(stats);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/chatbot/irrigation/schedules", async (req, res) => {
+  try {
+    const { plantId } = req.query;
+    const schedules = await getIrrigationSchedule(plantId ? Number(plantId) : null);
+    res.json({ schedules });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/report", (req, res) => {

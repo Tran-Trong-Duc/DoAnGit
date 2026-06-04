@@ -162,9 +162,20 @@ function gardenPlantSentence(question, gardenData, knowledgeMatches) {
   return `Trong hệ thống, cây "${plant.name}" đang lưu ${details.join(", ")}.`;
 }
 
-function buildLocalKnowledgeAnswer(question, gardenData, knowledgeMatches = []) {
+function buildLocalKnowledgeAnswer(question, gardenData, knowledgeMatches = [], dynamicQueryResults = []) {
   if (isGardenPlantListQuestion(question)) {
     return cleanParagraph(gardenPlantListSentence(gardenData));
+  }
+
+  const waterFlowData = dynamicQueryResults.find((r) => r.type === "water_flow");
+  const scheduleData = dynamicQueryResults.find((r) => r.type === "irrigation_schedule");
+
+  const normalized = normalizeAssistantText(question);
+  const isWaterFlowQuestion = /(luu luong|luong nuoc|tuoi|nuoc|flow|thoi gian tuoi|duration)/.test(normalized);
+
+  if (isWaterFlowQuestion && waterFlowData) {
+    const answer = buildWaterFlowAnswer(waterFlowData, scheduleData);
+    if (answer) return cleanParagraph(answer);
   }
 
   const plantSentence = gardenPlantSentence(question, gardenData, knowledgeMatches);
@@ -181,6 +192,58 @@ function buildLocalKnowledgeAnswer(question, gardenData, knowledgeMatches = []) 
   if (plantSentence) return cleanParagraph(plantSentence);
 
   return "Mình chưa tìm thấy dữ liệu nội bộ phù hợp cho câu hỏi này. Hãy nạp thêm Excel theo mẫu ten_cay, tu_khoa và các cặp truong_khoa/thong_tin hoặc thêm cây/ngưỡng trong hệ thống rồi hỏi lại.";
+}
+
+function buildWaterFlowAnswer(waterFlowData, scheduleData) {
+  if (!waterFlowData) return "";
+
+  const stats = waterFlowData.stats || {};
+  const records = waterFlowData.data || [];
+
+  if (records.length === 0) {
+    return "Hiện không có dữ liệu lưu lượng nước trong hệ thống.";
+  }
+
+  const parts = [];
+
+  parts.push(`Tổng số bản ghi lưu lượng nước: ${stats.totalRecords || records.length} bản ghi.`);
+
+  if (stats.avgFlowRate && Number(stats.avgFlowRate) > 0) {
+    parts.push(`Lưu lượng trung bình: ${stats.avgFlowRate} lít/phút.`);
+  }
+
+  if (stats.minFlowRate && Number(stats.minFlowRate) > 0 && stats.maxFlowRate && Number(stats.maxFlowRate) > 0) {
+    parts.push(`Lưu lượng dao động từ ${stats.minFlowRate} đến ${stats.maxFlowRate} lít/phút.`);
+  }
+
+  if (stats.estimatedDurationMinutes && Number(stats.estimatedDurationMinutes) > 0) {
+    const duration = Number(stats.estimatedDurationMinutes);
+    if (duration >= 60) {
+      const hours = Math.floor(duration / 60);
+      const mins = Math.round(duration % 60);
+      parts.push(`Tổng thời gian tưới ước tính: khoảng ${hours} giờ ${mins > 0 ? `${mins} phút` : ""}.`);
+    } else {
+      parts.push(`Tổng thời gian tưới ước tính: khoảng ${duration} phút.`);
+    }
+  }
+
+  if (stats.dateRange?.from && stats.dateRange?.to) {
+    parts.push(`Dữ liệu từ ngày ${stats.dateRange.from} đến ${stats.dateRange.to}.`);
+  }
+
+  if (scheduleData && scheduleData.data && scheduleData.data.length > 0) {
+    const activeSchedules = scheduleData.data.filter((s) => s.is_active);
+    if (activeSchedules.length > 0) {
+      const times = activeSchedules
+        .map((s) => s.irrigation_time?.slice(0, 5))
+        .filter(Boolean);
+      if (times.length > 0) {
+        parts.push(`Lịch tưới đang hoạt động: ${times.join(", ")}.`);
+      }
+    }
+  }
+
+  return parts.join(" ");
 }
 
 function responsePayload({
@@ -256,7 +319,7 @@ function createAssistantService(deps) {
     }
 
     if (!answer) {
-      answer = buildLocalKnowledgeAnswer(question, gardenContext.gardenData, gardenContext.knowledgeMatches || []);
+      answer = buildLocalKnowledgeAnswer(question, gardenContext.gardenData, gardenContext.knowledgeMatches || [], gardenContext.dynamicQueryResults || []);
     }
 
     return responsePayload({

@@ -2,6 +2,7 @@ const { withTimeout } = require("./utils");
 const { PLANT_ASSISTANT_DB_TIMEOUT_MS } = require("./config");
 const { aiDemoContextQuestion, normalizeAssistantText } = require("./text");
 const { searchKnowledge } = require("../../../chatBot/mysqlKnowledge");
+const { searchTables } = require("../../../chatBot/mysqlDynamicQuery");
 
 function isGardenSystemQuestion(question = "") {
   const normalized = normalizeAssistantText(question);
@@ -101,11 +102,32 @@ function createContextBuilder(deps) {
     const question = aiDemoContextQuestion(messages);
     const gardenData = await loadGardenData();
     let knowledgeMatches = [];
-    if (!isGardenSystemQuestion(question)) {
+    let dynamicQueryResults = [];
+    
+    const normalizedQ = normalizeAssistantText(question);
+    const isWaterFlowQuestion = /(luu luong|luong nuoc|tuoi|nuoc|flow|watering|irrigation|thoi gian tuoi|duration)/.test(normalizedQ);
+    const isSensorQuestion = /(cam bien|sensor|nhiet do|do am|anh sang|temperature|humidity|light)/.test(normalizedQ);
+    const isAlertQuestion = /(canh bao|alert|warning)/.test(normalizedQ);
+    const isFertilizerQuestion = /(phan bon|fertilizer|dinh duong)/.test(normalizedQ);
+    
+    const needsDynamicQuery = isWaterFlowQuestion || isSensorQuestion || isAlertQuestion || isFertilizerQuestion || !isGardenSystemQuestion(question);
+    
+    if (needsDynamicQuery) {
       try {
         knowledgeMatches = await searchKnowledge(question, 5);
       } catch (err) {
         console.log("Assistant MySQL knowledge failed:", err.message);
+      }
+      try {
+        dynamicQueryResults = await searchTables(question, { limit: 5 });
+      } catch (err) {
+        console.log("Assistant dynamic query failed:", err.message);
+      }
+    } else {
+      try {
+        dynamicQueryResults = await searchTables(question, { limit: 5 });
+      } catch (err) {
+        console.log("Assistant dynamic query failed:", err.message);
       }
     }
 
@@ -147,6 +169,14 @@ function createContextBuilder(deps) {
         answer: item.answer,
         matchedTerms: item.matchedTerms,
       })),
+      dynamicQuery: dynamicQueryResults.map((item) => ({
+        table: item.table,
+        type: item.type,
+        data: item.data,
+        stats: item.stats,
+        summary: item.summary,
+        relevance: item.relevance,
+      })),
       dbAvailable: gardenData.dbAvailable,
     };
 
@@ -154,6 +184,7 @@ function createContextBuilder(deps) {
       question,
       gardenData,
       knowledgeMatches,
+      dynamicQueryResults,
       contextJson: JSON.stringify(payload, null, 2),
       payload,
     };

@@ -18,6 +18,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const COUNTDOWN_SYNC_DRIFT_MS = 2500;
 const PLANT_CHAT_HISTORY_LIMIT = 16;
 const IRRIGATION_FLOW_RATE_STORAGE_KEY = "sg_irrigation_flow_rate_lpm";
+const THEME_MODE_STORAGE_KEY = "sg_theme_mode";
 
 // Cache du lieu tren trinh duyet de form sua/chon co the dung lai ma khong goi API lap lai.
 let plantsCache = [];
@@ -50,7 +51,7 @@ const AUTO_RULE_SENSOR_OPTIONS = [
   { key: "humidity", label: "Độ ẩm không khí", unit: "%" },
   { key: "soil_moisture", label: "Độ ẩm đất", unit: "%" },
   { key: "light", label: "Ánh sáng", unit: " lux" },
-  { key: "gas", label: "Khí độc", unit: " ppm", noBelow: true },
+  { key: "gas", label: "Khí độc", unit: " ppm" },
   { key: "flame", label: "Cảm biến lửa", fireOnly: true },
 ];
 const AUTO_RULE_DIRECTIONS = [
@@ -59,13 +60,14 @@ const AUTO_RULE_DIRECTIONS = [
   { key: "above", label: "Trên ngưỡng" },
 ];
 const DEFAULT_AUTO_RULE_STATE = {
-  irrigation: { soil_moisture: { below: true, above: false } },
-  fan: { temperature: { below: false, above: true }, humidity: { below: false, above: true }, gas: { below: false, above: true } },
-  spray: { temperature: { below: false, above: true }, humidity: { below: true, above: false } },
+  irrigation: { soil_moisture: { below: false, above: false } },
+  fan: { temperature: { below: false, above: false }, humidity: { below: false, above: true }, gas: { below: false, above: true } },
+  spray: { temperature: { below: false, above: false }, humidity: { below: true, above: false } },
 };
 let activeAutoSetupDevice = "irrigation";
 let activeAutoScheduleDevice = "irrigation";
 let autoRulesState = createDefaultAutoRules();
+let autoRuleSingleSelectSelections = {};
 let currentAlert = null;
 let alertStream = null;
 let alertStreamReconnectTimer = null;
@@ -113,6 +115,45 @@ function logout() {
   localStorage.removeItem("user");
   document.cookie = "sg_token=; Max-Age=0; path=/";
   window.location.href = "/login.html";
+}
+
+function storedThemeMode() {
+  const stored = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+  return stored === "light" || stored === "dark" ? stored : "dark";
+}
+
+function applyThemeMode(mode) {
+  const isLight = mode === "light";
+  document.body.classList.toggle("theme-light", isLight);
+  document.body.classList.toggle("theme-dark", !isLight);
+
+  const toggle = document.getElementById("themeModeToggle");
+  const label = document.querySelector(".toggle-label[for='themeModeToggle']");
+  const nextLabel = isLight ? "Chuyển sang chế độ tối" : "Bật chế độ sáng";
+
+  if (toggle) {
+    toggle.checked = isLight;
+    toggle.setAttribute("aria-label", nextLabel);
+  }
+  if (label) {
+    label.title = nextLabel;
+    label.setAttribute("aria-label", nextLabel);
+  }
+}
+
+function setThemeMode(mode) {
+  const nextMode = mode === "light" ? "light" : "dark";
+  localStorage.setItem(THEME_MODE_STORAGE_KEY, nextMode);
+  applyThemeMode(nextMode);
+  syncSensorChartTheme();
+}
+
+function initThemeModeToggle() {
+  const toggle = document.getElementById("themeModeToggle");
+  applyThemeMode(storedThemeMode());
+  toggle?.addEventListener("change", () => {
+    setThemeMode(toggle.checked ? "light" : "dark");
+  });
 }
 
 function normalizeSearchText(text = "") {
@@ -181,12 +222,18 @@ function updateWaterFlowEstimate() {
   }
 }
 
-function saveWaterFlowRate() {
+function currentWaterFlowRateInputValue() {
+  const flowInput = document.getElementById("waterFlowRate");
+  const flowRate = Number(flowInput?.value);
+  return Number.isFinite(flowRate) && flowRate >= 0 ? flowRate : null;
+}
+
+async function saveWaterFlowRate() {
   const flowInput = document.getElementById("waterFlowRate");
   const saveButton = document.getElementById("saveWaterFlowRateButton");
-  const flowRate = Number(flowInput?.value);
+  const flowRate = currentWaterFlowRateInputValue();
 
-  if (!Number.isFinite(flowRate) || flowRate < 0) {
+  if (flowRate === null) {
     if (saveButton) {
       saveButton.innerText = "Nhập lại";
       saveButton.classList.remove("is-saved");
@@ -195,10 +242,37 @@ function saveWaterFlowRate() {
     return;
   }
 
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.innerText = "Đang lưu";
+    saveButton.classList.remove("is-saved");
+  }
+
+  const data = await request("/water-flow", "POST", {
+    measurement_time: new Date().toISOString(),
+    flow_rate: flowRate,
+    notes: "Gán lưu lượng tưới thủ công từ giao diện",
+  });
+
+  if (data.isError) {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.innerText = "Lưu lỗi";
+    }
+    alertMsg(data);
+    return;
+  }
+
   irrigationFlowRateLitersPerMinute = flowRate;
   localStorage.setItem(IRRIGATION_FLOW_RATE_STORAGE_KEY, String(flowRate));
   updateWaterFlowEstimate();
+  if (saveButton) {
+    saveButton.disabled = false;
+    saveButton.innerText = "Đã gán";
+    saveButton.classList.add("is-saved");
+  }
   setWaterFlowEditorOpen(false);
+  alertMsg(data);
 }
 
 function setWaterFlowEditorOpen(open) {
@@ -1215,7 +1289,7 @@ async function askPlantAssistant(query, { reset = false } = {}) {
     }
     if (requestId === plantChatRequestId) {
       const modeLabel = reply.mode || "Trợ lý AI";
-      setPlantChatStatus(`Đang dùng: ${modeLabel}.`);
+      setPlantChatStatus(`Đang dùng: ${modeLabel}`);
     }
   } catch (err) {
     const index = plantChatMessages.findIndex((message) => message.requestId === requestId);
@@ -1394,6 +1468,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 initInternalSearch();
+initThemeModeToggle();
 
 // Danh sach trang dung de doi tieu de va tai lai dung du lieu khi nguoi dung chuyen menu.
 const pages = {
@@ -1777,12 +1852,15 @@ const sensorLanePlugin = {
       const y = Math.min(top, bottom);
       const height = Math.abs(bottom - top);
 
-      ctx.fillStyle = index % 2 === 0 ? "rgba(15,23,42,.64)" : "rgba(30,41,59,.46)";
+      const lightTheme = document.body.classList.contains("theme-light");
+      ctx.fillStyle = lightTheme
+        ? (index % 2 === 0 ? "rgba(255,255,255,.94)" : "rgba(226,242,236,.9)")
+        : (index % 2 === 0 ? "rgba(15,23,42,.9)" : "rgba(30,41,59,.72)");
       ctx.fillRect(chartArea.left, y, chartArea.right - chartArea.left, height);
-      ctx.fillStyle = `${meta.color}1f`;
+      ctx.fillStyle = `${meta.color}${lightTheme ? "18" : "2b"}`;
       ctx.fillRect(chartArea.left, y, chartArea.right - chartArea.left, height);
 
-      ctx.strokeStyle = "rgba(148,163,184,.14)";
+      ctx.strokeStyle = lightTheme ? "rgba(15,23,42,.18)" : "rgba(203,213,225,.28)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(chartArea.left, y + height);
@@ -1791,7 +1869,7 @@ const sensorLanePlugin = {
 
       ctx.fillStyle = meta.color;
       ctx.fillRect(chartArea.left + 12, y + 14, 8, 8);
-      ctx.fillStyle = "rgba(226,232,240,.86)";
+      ctx.fillStyle = lightTheme ? "#0f172a" : "#f8fafc";
       ctx.font = "700 12px Inter, sans-serif";
       ctx.textBaseline = "middle";
       ctx.fillText(meta.label, chartArea.left + 28, y + 18);
@@ -1813,7 +1891,7 @@ const sensorLanePlugin = {
         if (y < chartArea.top || y > chartArea.bottom) return;
 
         ctx.strokeStyle = meta.color;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 2;
         ctx.setLineDash([7, 6]);
         ctx.beginPath();
         ctx.moveTo(chartArea.left + 8, y);
@@ -1829,12 +1907,12 @@ const sensorLanePlugin = {
         const preferredLabelY = threshold.side === "below" ? y + 4 : y - labelHeight - 4;
         const labelY = Math.max(chartArea.top + 6, Math.min(chartArea.bottom - labelHeight - 6, preferredLabelY));
 
-        ctx.fillStyle = "rgba(2,6,23,.86)";
+        ctx.fillStyle = document.body.classList.contains("theme-light") ? "rgba(255,255,255,.94)" : "rgba(2,6,23,.94)";
         ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
         ctx.strokeStyle = `${meta.color}cc`;
         ctx.lineWidth = 1;
         ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
-        ctx.fillStyle = "#f8fafc";
+        ctx.fillStyle = document.body.classList.contains("theme-light") ? "#0f172a" : "#f8fafc";
         ctx.textBaseline = "middle";
         ctx.fillText(label, labelX + 7, labelY + labelHeight / 2);
       });
@@ -1858,7 +1936,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
         cubicInterpolationMode: "monotone",
         pointRadius: latestPointRadius,
         pointHoverRadius: 5,
-        borderWidth: 2.5,
+        borderWidth: 3.25,
         yAxisID: "yLane",
       },
       {
@@ -1870,7 +1948,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
         cubicInterpolationMode: "monotone",
         pointRadius: latestPointRadius,
         pointHoverRadius: 5,
-        borderWidth: 2.5,
+        borderWidth: 3.25,
         yAxisID: "yLane",
       },
       {
@@ -1882,7 +1960,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
         cubicInterpolationMode: "monotone",
         pointRadius: latestPointRadius,
         pointHoverRadius: 5,
-        borderWidth: 2.5,
+        borderWidth: 3.25,
         yAxisID: "yLane",
       },
       {
@@ -1894,7 +1972,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
         cubicInterpolationMode: "monotone",
         pointRadius: latestPointRadius,
         pointHoverRadius: 5,
-        borderWidth: 2.5,
+        borderWidth: 3.25,
         yAxisID: "yLane",
       },
       {
@@ -1906,7 +1984,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
         cubicInterpolationMode: "monotone",
         pointRadius: latestPointRadius,
         pointHoverRadius: 5,
-        borderWidth: 2.5,
+        borderWidth: 3.25,
         yAxisID: "yLane",
       },
     ],
@@ -1914,6 +1992,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
   options: {
     responsive: true,
     maintainAspectRatio: false,
+    devicePixelRatio: Math.max(window.devicePixelRatio || 1, 2),
     animation: { duration: 450, easing: "easeOutQuart" },
     interaction: { mode: "index", intersect: false },
     plugins: {
@@ -1923,7 +2002,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
       tooltip: {
         backgroundColor: "#020617",
         borderColor: "rgba(148,163,184,.22)",
-        borderWidth: 1,
+        borderWidth: 1.25,
         padding: 12,
         cornerRadius: 10,
         callbacks: {
@@ -1950,7 +2029,7 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
           maxRotation: 0,
           callback: (value) => formatChartTick(value),
         },
-        grid: { color: "rgba(148,163,184,.07)" },
+        grid: { color: "rgba(203,213,225,.16)", lineWidth: 1 },
       },
       yLane: {
         display: false,
@@ -1962,6 +2041,23 @@ const sensorChart = new Chart(document.getElementById("sensorChart"), {
     },
   },
 });
+
+function syncSensorChartTheme() {
+  const isLight = document.body.classList.contains("theme-light");
+  const tooltipBackground = isLight ? "#ffffff" : "#020617";
+  const tooltipColor = isLight ? "#0f172a" : "#f8fafc";
+  const tooltipBorder = isLight ? "rgba(15,23,42,.16)" : "rgba(148,163,184,.22)";
+
+  sensorChart.options.plugins.tooltip.backgroundColor = tooltipBackground;
+  sensorChart.options.plugins.tooltip.titleColor = tooltipColor;
+  sensorChart.options.plugins.tooltip.bodyColor = tooltipColor;
+  sensorChart.options.plugins.tooltip.borderColor = tooltipBorder;
+  sensorChart.options.scales.x.ticks.color = isLight ? "#334155" : "#9fb1ca";
+  sensorChart.options.scales.x.grid.color = isLight ? "rgba(15,23,42,.18)" : "rgba(203,213,225,.16)";
+  sensorChart.options.scales.x.grid.lineWidth = 1;
+
+  sensorChart.update("none");
+}
 
 function chartThresholdSignature() {
   if (!mainPlant) return "";
@@ -2466,7 +2562,7 @@ function renderLatestFertilizer(fertilizer) {
     <div class="fertilizer-summary">
       <div><span>Cây</span><strong>${escapeHtml(fertilizer.plant_name || `Plant ${fertilizer.plant_id || "--"}`)}</strong></div>
       <div><span>Loại phân</span><strong>${escapeHtml(fertilizer.type || "--")}</strong></div>
-      <div><span>Số lượng</span><strong>${escapeHtml(fertilizer.quantity || "--")}</strong></div>
+      <div><span>Số lượng</span><strong>${escapeHtml(fertilizer.quantity || "--")} kg</strong></div>
       <div><span>Phương pháp</span><strong>${escapeHtml(fertilizer.method || "--")}</strong></div>
     </div>
   `;
@@ -2586,6 +2682,14 @@ function createDefaultAutoRules(source = DEFAULT_AUTO_RULE_STATE) {
         normalized[device][sensor.key][direction.key] =
           value === undefined || value === null ? fallback : Boolean(value);
       });
+      if (isSingleSelectAutoRuleCard(device, sensor.key)) {
+        let selected = false;
+        AUTO_RULE_DIRECTIONS.forEach((direction) => {
+          if (!normalized[device][sensor.key][direction.key]) return;
+          if (selected) normalized[device][sensor.key][direction.key] = false;
+          selected = true;
+        });
+      }
     });
   });
   return normalized;
@@ -2596,12 +2700,39 @@ function isAutoRuleEnabled(device, sensorKey, direction) {
 }
 
 function isAutoRuleUnused(device, sensorKey) {
-  return !AUTO_RULE_DIRECTIONS.some((direction) => isAutoRuleEnabled(device, sensorKey, direction.key));
+  const sensor = AUTO_RULE_SENSOR_OPTIONS.find((item) => item.key === sensorKey);
+  return !autoRuleDirectionsForSensor(sensor).some((direction) => isAutoRuleEnabled(device, sensorKey, direction.key));
 }
 
 function isAutoRuleDirectionDisabled(sensor, direction) {
   if (direction === "unused") return false;
   return Boolean(sensor.fireOnly || (sensor.noBelow && direction === "below"));
+}
+
+function autoRuleDirectionsForSensor(sensor) {
+  if (sensor?.key === "gas") {
+    return [
+      { key: "below", label: "Dưới mức" },
+      { key: "above", label: "Quá mức" },
+    ];
+  }
+  return AUTO_RULE_DIRECTIONS;
+}
+
+function isSingleSelectAutoRuleCard(device, sensorKey) {
+  return (
+    (device === "irrigation" && sensorKey === "soil_moisture") ||
+    ((device === "fan" || device === "spray") && sensorKey === "temperature")
+  );
+}
+
+function applySingleSelectAutoRuleChoice(rules, device, sensor, direction) {
+  const nextRules = createDefaultAutoRules(rules);
+  if (direction === "unused" || !isSingleSelectAutoRuleCard(device, sensor)) return nextRules;
+  AUTO_RULE_DIRECTIONS.forEach((ruleDirection) => {
+    nextRules[device][sensor][ruleDirection.key] = ruleDirection.key === direction;
+  });
+  return nextRules;
 }
 
 function renderAutoRuleSetup() {
@@ -2631,28 +2762,45 @@ function renderAutoRuleSetup() {
       `;
     }
 
-    const buttons = AUTO_RULE_DIRECTIONS.map((direction) => {
+    const switchRows = autoRuleDirectionsForSensor(sensor).map((direction) => {
       const disabled = isAutoRuleDirectionDisabled(sensor, direction.key);
       const active = isAutoRuleEnabled(activeAutoSetupDevice, sensor.key, direction.key);
-      const classes = active ? "state-on" : "secondary state-off";
+      const title = disabled
+        ? "Cảm biến này không có ngưỡng dưới"
+        : `${deviceLabel}: ${direction.label.toLowerCase()} ${sensor.label.toLowerCase()}`;
       return `
-        <button
-          type="button"
-          class="mini auto-rule-button ${classes}"
-          ${disabled ? "disabled" : ""}
-          onclick="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', '${direction.key}')"
-          title="${disabled ? "Cảm biến này không có ngưỡng dưới" : `${deviceLabel}: ${direction.label.toLowerCase()} ${sensor.label.toLowerCase()}`}"
-        >${escapeHtml(direction.label)}</button>
+        <label class="auto-rule-switch-row ${active ? "active" : ""} ${disabled ? "disabled" : ""}" title="${escapeHtml(title)}">
+          <span class="auto-rule-switch-text">${escapeHtml(direction.label)}</span>
+          <span class="toggle-switch">
+            <input
+              type="checkbox"
+              ${active ? "checked" : ""}
+              ${disabled ? "disabled" : ""}
+              onchange="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', '${direction.key}', this.checked)"
+            />
+            <span class="toggle-switch-background">
+              <span class="toggle-switch-handle"></span>
+            </span>
+          </span>
+        </label>
       `;
     }).join("");
     const unusedActive = isAutoRuleUnused(activeAutoSetupDevice, sensor.key);
+    const unusedTitle = `${deviceLabel}: không dùng ${sensor.label.toLowerCase()} để điều khiển tự động`;
     const unusedButton = `
-      <button
-        type="button"
-        class="mini auto-rule-button auto-rule-unused ${unusedActive ? "state-unused" : "secondary state-off"}"
-        onclick="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', 'unused')"
-        title="${deviceLabel}: không dùng ${sensor.label.toLowerCase()} để điều khiển tự động"
-      >Không sử dụng</button>
+      <label class="auto-rule-switch-row auto-rule-unused ${unusedActive ? "active unused-active" : ""}" title="${escapeHtml(unusedTitle)}">
+        <span class="auto-rule-switch-text">Không sử dụng</span>
+        <span class="toggle-switch">
+          <input
+            type="checkbox"
+            ${unusedActive ? "checked" : ""}
+            onchange="toggleAutoRule('${activeAutoSetupDevice}', '${sensor.key}', 'unused', this.checked)"
+          />
+          <span class="toggle-switch-background">
+            <span class="toggle-switch-handle"></span>
+          </span>
+        </span>
+      </label>
     `;
 
     return `
@@ -2661,7 +2809,7 @@ function renderAutoRuleSetup() {
           <strong>${escapeHtml(sensor.label)}</strong>
           <span>${escapeHtml(deviceLabel)}</span>
         </div>
-        <div class="auto-rule-buttons">${buttons}${unusedButton}</div>
+        <div class="auto-rule-buttons">${switchRows}${unusedButton}</div>
       </div>
     `;
   }).join("");
@@ -3738,7 +3886,11 @@ async function runManualDevice(device, endpoint, payload = {}) {
 }
 
 async function irrigate() {
-  await runManualDevice("irrigation", "/irrigation", { duration: manualIrrigationDuration.value });
+  const flowRate = currentWaterFlowRateInputValue() ?? irrigationFlowRateLitersPerMinute;
+  await runManualDevice("irrigation", "/irrigation", {
+    duration: manualIrrigationDuration.value,
+    flow_rate: flowRate,
+  });
 }
 
 async function fanTimer() {
@@ -3791,18 +3943,19 @@ async function setAutoIrrigationMode(mode) {
   }
 }
 
-async function toggleAutoRule(device, sensor, direction) {
+async function toggleAutoRule(device, sensor, direction, checked = null) {
   const sensorOption = AUTO_RULE_SENSOR_OPTIONS.find((item) => item.key === sensor);
   if (!AUTO_RULE_DEVICE_OPTIONS[device] || !sensorOption || isAutoRuleDirectionDisabled(sensorOption, direction)) return;
 
-  const enabled = direction === "unused" ? false : !isAutoRuleEnabled(device, sensor, direction);
+  const singleSelectOption = direction !== "unused" && isSingleSelectAutoRuleCard(device, sensor);
+  const enabled = singleSelectOption ? true : direction === "unused" ? false : Boolean(checked ?? !isAutoRuleEnabled(device, sensor, direction));
   const data = await request("/auto-rules", "POST", { device, sensor, direction, enabled });
   alertMsg(data);
 
   if (!data.isError) {
-    autoRulesState = createDefaultAutoRules(data.autoRules || autoRulesState);
+    autoRulesState = applySingleSelectAutoRuleChoice(data.autoRules || autoRulesState, device, sensor, direction);
     renderAutoRuleSetup();
-    await loadData();
+    if (!singleSelectOption) await loadData();
   }
 }
 
@@ -4051,7 +4204,7 @@ function renderFertilizerList() {
           <strong>${escapeHtml(item.type || "--")}</strong>
           <span class="badge small">${formatDateTime(item.created_at)}</span>
         </div>
-        <p><strong>Cây:</strong> ${escapeHtml(item.plant_name || `Plant ${item.plant_id || "--"}`)} · <strong>Số lượng:</strong> ${escapeHtml(item.quantity || "--")}</p>
+        <p><strong>Cây:</strong> ${escapeHtml(item.plant_name || `Plant ${item.plant_id || "--"}`)} · <strong>Số lượng:</strong> ${escapeHtml(item.quantity || "--")} kg</p>
         <p><strong>Phương pháp:</strong> ${escapeHtml(item.method || "--")}${item.note ? ` · <strong>Ghi chú:</strong> ${escapeHtml(item.note)}` : ""}</p>
       </div>
       <div class="plant-actions">
@@ -4267,7 +4420,7 @@ function fillFertilizerLogTable(rows) {
       <td>${escapeHtml(log.plant_name || `Plant ${log.plant_id || "--"}`)}</td>
       <td>${escapeHtml(log.type || "")}</td>
       <td>${escapeHtml(log.method || "")}</td>
-      <td>${escapeHtml(log.quantity || "")}</td>
+      <td>${escapeHtml(log.quantity || "")} kg</td>
       <td>${formatDateTime(log.created_at)}</td>
     </tr>
   `).join("");
@@ -4345,7 +4498,7 @@ async function loadAlerts(triggerButton = null) {
   try {
     const data = await request("/alerts");
     if (!Array.isArray(data)) return alertMsg(data);
-    alertTable.innerHTML = data.map((alertRow) => {
+    alertTable.innerHTML = [...data].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((alertRow) => {
       const message = alertRow.level === "info" && alertRow.alert_type !== "fire"
         ? compactActionMessage(alertRow.message)
         : alertRow.message;

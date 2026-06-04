@@ -26,8 +26,44 @@
 <body>
   <aside class="sidebar">
     <div class="brand">
-      <img class="brand-logo" src="/assets/smart-garden-logo.jpg" alt="Smart Garden" />
+      <img style="border:5px solid black;" class="brand-logo" src="/assets/smart-garden-logo.jpg" alt="Smart Garden" />
       <!-- <div><h2 style="text-align: center;">Smart Garden</h2><p style="text-align: center;">IoT </p></div> -->
+    </div>
+    <div class="theme-toggle-panel">
+      <div class="toggle-cont">
+        <input class="toggle-input" id="themeModeToggle" name="theme-mode" type="checkbox" />
+        <label class="toggle-label" for="themeModeToggle">
+          <div class="cont-icon">
+            <span style="--width: 2; --deg: 25; --duration: 11" class="sparkle"></span>
+            <span style="--width: 1; --deg: 100; --duration: 18" class="sparkle"></span>
+            <span style="--width: 1; --deg: 280; --duration: 5" class="sparkle"></span>
+            <span style="--width: 2; --deg: 200; --duration: 3" class="sparkle"></span>
+            <span style="--width: 2; --deg: 30; --duration: 20" class="sparkle"></span>
+            <span style="--width: 2; --deg: 300; --duration: 9" class="sparkle"></span>
+            <span style="--width: 1; --deg: 250; --duration: 4" class="sparkle"></span>
+            <span style="--width: 2; --deg: 210; --duration: 8" class="sparkle"></span>
+            <span style="--width: 2; --deg: 100; --duration: 9" class="sparkle"></span>
+            <span style="--width: 1; --deg: 15; --duration: 13" class="sparkle"></span>
+            <span style="--width: 1; --deg: 75; --duration: 18" class="sparkle"></span>
+            <span style="--width: 2; --deg: 65; --duration: 6" class="sparkle"></span>
+            <span style="--width: 2; --deg: 50; --duration: 7" class="sparkle"></span>
+            <span style="--width: 1; --deg: 320; --duration: 5" class="sparkle"></span>
+            <span style="--width: 1; --deg: 220; --duration: 5" class="sparkle"></span>
+            <span style="--width: 1; --deg: 215; --duration: 2" class="sparkle"></span>
+            <span style="--width: 2; --deg: 135; --duration: 9" class="sparkle"></span>
+            <span style="--width: 2; --deg: 45; --duration: 4" class="sparkle"></span>
+            <span style="--width: 1; --deg: 78; --duration: 16" class="sparkle"></span>
+            <span style="--width: 1; --deg: 89; --duration: 19" class="sparkle"></span>
+            <span style="--width: 2; --deg: 65; --duration: 14" class="sparkle"></span>
+            <span style="--width: 2; --deg: 97; --duration: 1" class="sparkle"></span>
+            <span style="--width: 1; --deg: 174; --duration: 10" class="sparkle"></span>
+            <span style="--width: 1; --deg: 236; --duration: 5" class="sparkle"></span>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 30 30" class="icon">
+              <path d="M0.96233 28.61C1.36043 29.0081 1.96007 29.1255 2.47555 28.8971L10.4256 25.3552C13.2236 24.11 16.4254 24.1425 19.2107 25.4401L27.4152 29.2747C27.476 29.3044 27.5418 29.3023 27.6047 29.32C27.6563 29.3348 27.7079 29.3497 27.761 29.3574C27.843 29.3687 27.9194 29.3758 28 29.3688C28.1273 29.3617 28.2531 29.3405 28.3726 29.2945C28.4447 29.262 28.5162 29.2287 28.5749 29.1842C28.6399 29.1446 28.6993 29.0994 28.7509 29.0477L28.9008 28.8582C28.9468 28.7995 28.9793 28.7274 29.0112 28.656C29.0599 28.5322 29.0811 28.4036 29.0882 28.2734C29.0939 28.1957 29.0868 28.1207 29.0769 28.0415C29.0705 27.9955 29.0585 27.9524 29.0472 27.9072C29.0295 27.8343 29.0302 27.7601 28.9984 27.6901L25.1638 19.4855C23.8592 16.7073 23.8273 13.5048 25.0726 10.7068L28.6145 2.75679C28.8429 2.24131 28.7318 1.63531 28.3337 1.2372C27.9165 0.820011 27.271 0.721743 26.7491 0.9961L19.8357 4.59596C16.8418 6.15442 13.2879 6.18696 10.2615 4.70062L1.80308 0.520214C1.7055 0.474959 1.60722 0.441742 1.50964 0.421943C1.44459 0.409215 1.37882 0.395769 1.3074 0.402133C1.14406 0.395769 0.981436 0.428275 0.818095 0.499692C0.77284 0.519491 0.719805 0.545671 0.67455 0.578198C0.596061 0.617088 0.524653 0.675786 0.4596 0.74084C0.394546 0.805894 0.335843 0.877306 0.296245 0.956502C0.263718 1.00176 0.237561 1.05477 0.217762 1.10003C0.152708 1.24286 0.126545 1.40058 0.120181 1.54978C0.120181 1.61483 0.126527 1.6735 0.132891 1.73219C0.15269 1.85664 0.178881 1.97332 0.237571 2.08434L4.41798 10.5427C5.91139 13.5621 5.8725 17.1238 4.3204 20.1099L0.720514 27.0233C0.440499 27.5536 0.545137 28.1928 0.96233 28.61Z"></path>
+            </svg>
+          </div>
+        </label>
+      </div>
     </div>
     <button class="nav active" onclick="showPage('dashboard', this)">Tổng quan</button>
     <button class="nav" onclick="showPage('plants', this)">Cây trồng</button>
@@ -41,7 +77,14 @@
     <button class="nav" onclick="showPage('reports', this)">Báo cáo</button>
     <button class="nav" onclick="showPage('alerts', this)">🚨 Cảnh báo</button>
     <button class="nav nav-chatbot" type="button" onclick="openPlantChatbotModal()">Trợ lý Cây trồng</button>
-    <button class="nav logout-nav" type="button" style="text-align: center;" onclick="logout()">Đăng xuất</button>
+    <button class="logout-nav" type="button" aria-label="Đăng xuất" onclick="logout()">
+      <span class="logout-sign" aria-hidden="true">
+        <svg viewBox="0 0 512 512">
+          <path d="M377.9 105.9 500.7 228.7c7.2 7.2 11.3 17.1 11.3 27.3s-4.1 20.1-11.3 27.3L377.9 406.1c-6.4 6.4-15 9.9-24 9.9-18.7 0-33.9-15.2-33.9-33.9V320H192c-17.7 0-32-14.3-32-32v-64c0-17.7 14.3-32 32-32h128v-62.1c0-18.7 15.2-33.9 33.9-33.9 9 0 17.6 3.6 24 9.9zM160 96H96c-17.7 0-32 14.3-32 32v256c0 17.7 14.3 32 32 32h64c17.7 0 32 14.3 32 32s-14.3 32-32 32H96c-53 0-96-43-96-96V128C0 75 43 32 96 32h64c17.7 0 32 14.3 32 32s-14.3 32-32 32z"></path>
+        </svg>
+      </span>
+      <span class="logout-text">Đăng xuất</span>
+    </button>
   </aside>
 
   <main class="main">
@@ -92,7 +135,7 @@
         <span class="live-dot"></span>
         <strong>Live</strong>
         
-        <span>Dữ liệu cảm biến đang cập nhật thời gian thực</span>
+        <span class="sensor-live-text">Dữ liệu cảm biến đang cập nhật thời gian thực</span>
       </div>
       <div class="stats-grid">
         <div class="stat-card temp"><span>🌡️</span><p>Nhiệt độ</p><h2 id="statTemp">-- °C</h2></div>
@@ -411,7 +454,7 @@
           </select>
           <input id="fertType" placeholder="Loại phân" />
           <input id="fertMethod" placeholder="Phương pháp bón" />
-          <input id="fertQuantity" placeholder="Số lượng" />
+          <input id="fertQuantity" placeholder="Số lượng (kg)" />
         </div>
         <textarea id="fertNote" rows="4" placeholder="Ghi chú thêm"></textarea>
         <div class="row">
@@ -470,7 +513,7 @@
       <div class="panel"><h2>Dữ liệu cảm biến mới nhất</h2><table><thead><tr><th>ID</th><th>Nhiệt độ</th><th>Độ ẩm</th><th>Độ ẩm đất</th><th>Ánh sáng</th><th>Khí độc</th><th>Thời gian</th></tr></thead><tbody id="sensorTable"></tbody></table></div>
       <div class="panel"><h2>Lịch sử điều khiển</h2><table><thead><tr><th>ID</th><th>Device ID</th><th>Hành động</th><th>Chế độ</th><th>Thời gian</th></tr></thead><tbody id="deviceLogTable"></tbody></table></div>
       <div class="panel"><h2>Lịch sử tưới</h2><table><thead><tr><th>ID</th><th>Lượng nước</th><th>Thời gian tưới</th><th>Thời điểm</th></tr></thead><tbody id="irrigationLogTable"></tbody></table></div>
-      <div class="panel"><h2>Lịch sử bón phân</h2><table><thead><tr><th>ID</th><th>Cây</th><th>Loại phân</th><th>Phương pháp</th><th>Số lượng</th><th>Thời điểm</th></tr></thead><tbody id="fertilizerLogTable"></tbody></table></div>
+      <div class="panel"><h2>Lịch sử bón phân</h2><table><thead><tr><th>ID</th><th>Cây</th><th>Loại phân</th><th>Phương pháp</th><th>Số lượng (kg)</th><th>Thời điểm</th></tr></thead><tbody id="fertilizerLogTable"></tbody></table></div>
     </section>
 
     <section id="alerts" class="page">
